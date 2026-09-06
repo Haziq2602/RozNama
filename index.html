@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RozNama (रोज़नामा) - Multilingual Voice Ledger for Bharat Storekeepers</title>
+  <meta name="description" content="Voice-note ledger web app for local vendors in India. Speak naturally in Hindi, Hinglish, or English to record daily sales, track udhaar, and collect payments.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    
+    <!-- Top Header -->
+    <header class="app-header">
+      <div class="brand-wrapper">
+        <div class="logo-badge">🎙️</div>
+        <div>
+          <h1 class="brand-title">RozNama <span style="font-weight:400; font-size:1.2rem; color:var(--text-muted);">(रोज़नामा)</span></h1>
+          <div class="brand-subtitle">
+            <span class="bharat-flag-dot"></span> Smart Voice Ledger for Local Vendors & Kirana Stores
+          </div>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <select id="langSelect" class="lang-select" title="Select Voice & UI Language">
+          <option value="en-IN">🌐 English / Hinglish (en-IN)</option>
+          <option value="hi-IN">🇮🇳 हिन्दी (Hindi)</option>
+          <option value="mr-IN">🇮🇳 मराठी (Marathi)</option>
+          <option value="ta-IN">🇮🇳 தமிழ் (Tamil)</option>
+        </select>
+        <button class="action-btn" onclick="showToast('Khata ledger synchronized locally!', 'info')">
+          🔄 Sync Ledger
+        </button>
+      </div>
+    </header>
+
+    <!-- Overview Stats Row -->
+    <section class="stats-grid">
+      <div class="stat-card cash">
+        <div class="stat-header">
+          <span>Today's Cash Collected</span>
+          <div class="stat-icon">💵</div>
+        </div>
+        <div class="stat-value" id="statCashToday">₹0</div>
+        <div class="stat-footer">
+          <span>🟢 Real-time Jama entries</span>
+        </div>
+      </div>
+
+      <div class="stat-card udhaar">
+        <div class="stat-header">
+          <span>Total Udhaar (Pending Credit)</span>
+          <div class="stat-icon">📜</div>
+        </div>
+        <div class="stat-value" id="statUdhaarPending">₹0</div>
+        <div class="stat-footer">
+          <span>⚠️ Outstanding balance to collect</span>
+        </div>
+      </div>
+
+      <div class="stat-card customers">
+        <div class="stat-header">
+          <span>Active Customer Khatas</span>
+          <div class="stat-icon">👥</div>
+        </div>
+        <div class="stat-value" id="statActiveCust">0</div>
+        <div class="stat-footer">
+          <span>📱 Local vendor directory</span>
+        </div>
+      </div>
+
+      <div class="stat-card reminders">
+        <div class="stat-header">
+          <span>Payment Reminders Due</span>
+          <div class="stat-icon">🔔</div>
+        </div>
+        <div class="stat-value" id="statOverdueCount">0</div>
+        <div class="stat-footer">
+          <span>💬 WhatsApp reminders ready</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Voice Recording Hero Section -->
+    <section class="voice-hero-card">
+      <h2 class="voice-title">Speak into Mic to Log Sale or Udhaar</h2>
+      <p class="voice-desc">
+        Just speak naturally in Hindi or Hinglish. RozNama automatically detects customer name, cash paid, udhaar balance, purchased items, and promised due date.
+      </p>
+
+      <div class="voice-mic-container">
+        <button id="micBtn" class="mic-button" title="Tap to Speak">
+          🎙️
+        </button>
+        <div id="recordingStatus" class="recording-status">
+          Tap microphone to record voice ledger note
+        </div>
+
+        <div class="waveform-bars">
+          <div class="bar"></div>
+          <div class="bar"></div>
+          <div class="bar"></div>
+          <div class="bar"></div>
+          <div class="bar"></div>
+        </div>
+      </div>
+
+      <!-- Presets for Easy Demo Testing -->
+      <div class="preset-section-title">⚡ Try 1-Click Sample Voice Notes</div>
+      <div id="presetsContainer" class="presets-flex"></div>
+
+      <!-- Text Fallback / Direct Editor -->
+      <div class="text-fallback-wrapper">
+        <input type="text" id="transcriptInput" class="transcript-input" placeholder="Or type voice note transcript here... e.g. Ramish gave me 500 for groceries and 200 remaining day after tomorrow">
+        <button id="parseBtn" class="parse-btn">
+          ✨ Extract Ledger
+        </button>
+      </div>
+    </section>
+
+    <!-- Extracted Entity Preview Card -->
+    <div id="extractionContainer" style="display: none;"></div>
+
+    <!-- Main Content Panels -->
+    <div class="section-grid">
+      
+      <!-- Recent Transactions Table -->
+      <div class="panel-card">
+        <div class="panel-header">
+          <h3 class="panel-title">
+            <span>📋 Recent Voice Ledger Entries</span>
+          </h3>
+          <span style="font-size:0.85rem; color:var(--text-dim);">Live Activity Log</span>
+        </div>
+
+        <div class="table-wrapper">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                <th>Customer & Time</th>
+                <th>Items Purchased</th>
+                <th>Cash (Jama)</th>
+                <th>Udhaar (Credit)</th>
+                <th>Payment Due Date</th>
+              </tr>
+            </thead>
+            <tbody id="txTableBody">
+              <!-- Populated by app.js -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Customer Khata Directory & WhatsApp Reminders -->
+      <div class="panel-card">
+        <div class="panel-header">
+          <h3 class="panel-title">
+            <span>📒 Customer Khatas</span>
+          </h3>
+          <span style="font-size:0.85rem; color:var(--text-dim);">WhatsApp Reminders</span>
+        </div>
+
+        <div id="customerListContainer">
+          <!-- Populated by app.js -->
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- JavaScript Scripts -->
+  <script src="demo-data.js"></script>
+  <script src="app.js" defer></script>
+</body>
+</html>
