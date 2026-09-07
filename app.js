@@ -1,16 +1,4 @@
-// RozNama Engine - Voice Ledger Logic & Speech Processing
-
-// Global State
-let state = {
-  customers: [],
-  transactions: [],
-  isRecording: false,
-  selectedLang: 'en-IN',
-  currentExtraction: null
-};
-
-// Today's System Date Anchor (2026-09-06)
-const TODAY_DATE = new Date('2026-09-06T15:00:00');
+// RozNama Main Engine - Voice Ledger Logic & Speech Processing
 
 // Initialize Application
 document.addEventListener('DOMContentLoaded', () => {
@@ -19,25 +7,6 @@ document.addEventListener('DOMContentLoaded', () => {
   renderAll();
 });
 
-// Initialize Storage with Demo Data
-function initStorage() {
-  const storedCust = localStorage.getItem('roznama_customers');
-  const storedTx = localStorage.getItem('roznama_transactions');
-
-  if (storedCust && storedTx) {
-    state.customers = JSON.parse(storedCust);
-    state.transactions = JSON.parse(storedTx);
-  } else {
-    state.customers = [...INITIAL_CUSTOMERS];
-    state.transactions = [...INITIAL_TRANSACTIONS];
-    saveState();
-  }
-}
-
-function saveState() {
-  localStorage.setItem('roznama_customers', JSON.stringify(state.customers));
-  localStorage.setItem('roznama_transactions', JSON.stringify(state.transactions));
-}
 
 // Bind UI Events
 function bindEvents() {
@@ -463,6 +432,7 @@ function confirmTransaction() {
 
   state.transactions.unshift(newTx);
   saveState();
+  saveTransactionOffline(newTx);
 
   // Speak voice confirmation automatically
   speakConfirmation();
