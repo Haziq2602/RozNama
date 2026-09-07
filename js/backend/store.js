@@ -72,6 +72,7 @@ async function initStorage() {
 
     // Setup Network Listeners & Trigger initial sync if online
     setupNetworkListeners();
+    if (typeof renderAll === 'function') renderAll();
     if (navigator.onLine) {
       syncPendingQueue();
     }
