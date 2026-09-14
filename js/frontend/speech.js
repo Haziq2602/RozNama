@@ -1,68 +1,179 @@
-// RozNama Speech Engine - Microphone STT Recording & TTS Audio Feedback
+// RozNama Speech Engine - Hybrid Microphone STT (Groq Whisper Online + Browser Speech Offline)
 
 let recognition = null;
+let mediaRecorder = null;
+let audioChunks = [];
+let mediaStream = null;
 
-// Toggle Microphone Voice Recording (Speech-to-Text)
-function toggleRecording() {
+// Toggle Microphone Voice Recording
+async function toggleRecording() {
   const micBtn = document.getElementById('micBtn');
   const statusEl = document.getElementById('recordingStatus');
 
   if (!state.isRecording) {
-    // Start Recording
     state.isRecording = true;
     if (micBtn) micBtn.classList.add('recording');
-    if (statusEl) {
-      statusEl.classList.add('listening');
-      statusEl.innerHTML = `<span class="pulse-dot"></span> Listening in ${state.selectedLang}... Speak now!`;
-    }
 
-    // Try Web Speech API
-    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      recognition = new SpeechRecognition();
-      recognition.continuous = false;
-      recognition.interimResults = true;
-      recognition.lang = state.selectedLang;
+    // Decide between Online Groq Whisper vs Offline Browser Speech
+    const token = localStorage.getItem('roznama_jwt_token');
+    const isOnlineWithWhisper = navigator.onLine && token && navigator.mediaDevices && window.MediaRecorder;
 
-      recognition.onresult = (event) => {
-        let transcript = '';
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          transcript += event.results[i][0].transcript;
-        }
-        const inputEl = document.getElementById('transcriptInput');
-        if (inputEl) inputEl.value = transcript;
-
-        if (event.results[0].isFinal) {
-          stopRecording();
-          if (typeof processTranscript === 'function') {
-            processTranscript(transcript);
-          }
-        }
-      };
-
-      recognition.onerror = (err) => {
-        console.warn("Speech Recognition Error / Fallback triggered:", err);
-        if (typeof showToast === 'function') {
-          showToast("Mic active - Speech transcription ready", "info");
-        }
-      };
-
-      recognition.onend = () => {
-        if (state.isRecording) stopRecording();
-      };
-
-      try {
-        recognition.start();
-      } catch (e) {
-        console.warn("Speech API start blocked:", e);
-      }
+    if (isOnlineWithWhisper) {
+      // 1. ONLINE MODE: High-accuracy raw audio capture for Groq Whisper Large v3
+      startWhisperAudioRecording(statusEl);
     } else {
-      if (typeof showToast === 'function') {
-        showToast("Web Speech API not supported in browser, using text fallback parser", "info");
-      }
+      // 2. OFFLINE MODE: Fallback to local browser Web Speech API
+      startBrowserSpeechRecording(statusEl);
     }
+
   } else {
     stopRecording();
+  }
+}
+
+// 1. Online Groq Whisper Audio Recording Engine
+async function startWhisperAudioRecording(statusEl) {
+  try {
+    if (statusEl) {
+      statusEl.classList.add('listening');
+      statusEl.innerHTML = `<span class="pulse-dot"></span> 🎙️ Groq Whisper AI Listening (High Accuracy)... Speak now!`;
+    }
+
+    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioChunks = [];
+
+    // Use webm / mp4 depending on browser
+    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') 
+      ? 'audio/webm;codecs=opus' 
+      : (MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : 'audio/webm');
+
+    mediaRecorder = new MediaRecorder(mediaStream, { mimeType });
+
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data && event.data.size > 0) {
+        audioChunks.push(event.data);
+      }
+    };
+
+    mediaRecorder.onstop = async () => {
+      if (audioChunks.length === 0) return;
+      const audioBlob = new Blob(audioChunks, { type: mimeType });
+      audioChunks = [];
+
+      // Stop microphone stream
+      if (mediaStream) {
+        mediaStream.getTracks().forEach(track => track.stop());
+        mediaStream = null;
+      }
+
+      await sendAudioToWhisper(audioBlob);
+    };
+
+    mediaRecorder.start();
+
+  } catch (err) {
+    console.warn('Microphone permission blocked or MediaRecorder failed, falling back to browser speech:', err);
+    startBrowserSpeechRecording(statusEl);
+  }
+}
+
+// Send Raw Audio Blob to Express Server -> Groq Whisper
+async function sendAudioToWhisper(audioBlob) {
+  const statusEl = document.getElementById('recordingStatus');
+  const inputEl = document.getElementById('transcriptInput');
+  const token = localStorage.getItem('roznama_jwt_token');
+
+  if (statusEl) {
+    statusEl.innerHTML = `⚡ Transcribing with Groq Whisper Large v3...`;
+  }
+
+  try {
+    const res = await fetch('http://localhost:5000/api/ai/transcribe', {
+      method: 'POST',
+      headers: {
+        'Content-Type': audioBlob.type || 'audio/webm',
+        'Authorization': token ? `Bearer ${token}` : ''
+      },
+      body: audioBlob
+    });
+
+    const data = await res.json();
+
+    if (res.ok && data.success && data.text) {
+      if (inputEl) inputEl.value = data.text;
+      if (typeof showToast === 'function') {
+        showToast(`🎙️ Whisper Transcribed: "${data.text}"`, 'info');
+      }
+      if (typeof processTranscript === 'function') {
+        processTranscript(data.text);
+      }
+    } else {
+      console.warn('Whisper transcription unavailable, fallback to manual input or check error:', data);
+      if (data.error && typeof showToast === 'function') {
+        showToast('⚠️ Whisper AI unavailable, check Groq API key or try offline mic', 'info');
+      }
+    }
+
+  } catch (err) {
+    console.error('Audio upload to Whisper failed:', err);
+    if (typeof showToast === 'function') {
+      showToast('Connection failed. Please check backend server.', 'error');
+    }
+  } finally {
+    if (statusEl) {
+      statusEl.classList.remove('listening');
+      statusEl.innerHTML = `Tap microphone to record voice ledger note`;
+    }
+  }
+}
+
+// 2. Offline Mode: Browser Built-in Web Speech API
+function startBrowserSpeechRecording(statusEl) {
+  if (statusEl) {
+    statusEl.classList.add('listening');
+    statusEl.innerHTML = `<span class="pulse-dot"></span> 🌐 Offline Mode (Browser Mic Listening in ${state.selectedLang})... Speak now!`;
+  }
+
+  if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = state.selectedLang;
+
+    recognition.onresult = (event) => {
+      let transcript = '';
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        transcript += event.results[i][0].transcript;
+      }
+      const inputEl = document.getElementById('transcriptInput');
+      if (inputEl) inputEl.value = transcript;
+
+      if (event.results[0].isFinal) {
+        stopRecording();
+        if (typeof processTranscript === 'function') {
+          processTranscript(transcript);
+        }
+      }
+    };
+
+    recognition.onerror = (err) => {
+      console.warn("Browser Speech Recognition Error:", err);
+    };
+
+    recognition.onend = () => {
+      if (state.isRecording) stopRecording();
+    };
+
+    try {
+      recognition.start();
+    } catch (e) {
+      console.warn("Browser speech start blocked:", e);
+    }
+  } else {
+    if (typeof showToast === 'function') {
+      showToast("Web Speech not supported in browser, please type transcript manually", "info");
+    }
   }
 }
 
@@ -78,6 +189,12 @@ function stopRecording() {
     statusEl.innerHTML = `Tap microphone to record voice ledger note`;
   }
 
+  // Stop MediaRecorder if active
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    try { mediaRecorder.stop(); } catch(e){}
+  }
+
+  // Stop Web Speech Recognition if active
   if (recognition) {
     try { recognition.stop(); } catch(e){}
   }
@@ -90,21 +207,16 @@ function speakConfirmation() {
   const ext = state.currentExtraction;
   let textToSpeak = `${ext.customerName} se ${ext.paidAmount} rupaye cash mile. `;
   if (ext.udhaarAmount > 0) {
-    textToSpeak += `${ext.udhaarAmount} rupaye udhaar khate mein jode gaye hain, jo ${ext.dueDateLabel} tak milenge.`;
+    textToSpeak += `${ext.udhaarAmount} rupaye udhaar khate mein jode gaye hain, jo ${ext.dueDateLabel || 'bhavishya mein'} milenge.`;
   } else {
     textToSpeak += `Pura bhugtan safal raha.`;
   }
 
   if ('speechSynthesis' in window) {
-    window.speechSynthesis.cancel(); // Stop any active speech
+    window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(textToSpeak);
     utterance.lang = 'hi-IN';
     utterance.rate = 0.95;
     window.speechSynthesis.speak(utterance);
-    if (typeof showToast === 'function') {
-      showToast("Playing voice confirmation feedback...", "info");
-    }
-  } else {
-    alert(`Voice Confirmation Readout:\n"${textToSpeak}"`);
   }
 }

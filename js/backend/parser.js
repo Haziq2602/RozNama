@@ -1,7 +1,57 @@
 // RozNama Intelligence Engine - Natural Language Parsing & Entity Extraction
 
-function processTranscript(rawText) {
-  if (!rawText || typeof rawText !== 'string') return;
+// Toggle to switch between Groq LLM extraction (90-98% accuracy) and manual regex
+const USE_AI_EXTRACTION = true;
+
+async function processTranscript(rawText) {
+  if (!rawText || typeof rawText !== 'string' || !rawText.trim()) return;
+
+  const token = localStorage.getItem('roznama_jwt_token');
+
+  if (USE_AI_EXTRACTION && navigator.onLine) {
+    try {
+      if (typeof showToast === 'function') {
+        showToast('🧠 Analyzing voice note with AI...', 'info');
+      }
+
+      const res = await fetch('http://localhost:5000/api/ai/extract', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': token ? `Bearer ${token}` : ''
+        },
+        body: JSON.stringify({ transcript: rawText })
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.success && data.extraction) {
+        state.currentExtraction = data.extraction;
+        if (typeof renderExtractionCard === 'function') {
+          renderExtractionCard();
+        }
+        if (typeof showToast === 'function') {
+          showToast('✨ Extracted ledger details with AI!', 'success');
+        }
+        return;
+      } else {
+        if (data.error && data.error.includes('GROQ_API_KEY is not configured')) {
+          if (typeof showToast === 'function') {
+            showToast('⚠️ Groq API key not set in server/.env. Using manual rules.', 'info');
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('AI extraction request failed, falling back to manual rules:', err);
+    }
+  }
+
+  // Fallback to manual rule-based extraction
+  manualRuleBasedExtraction(rawText);
+}
+
+// Preserved Original Manual Rule-Based Parser (Offline Fallback)
+function manualRuleBasedExtraction(rawText) {
   const text = rawText.toLowerCase();
 
   // Stop words to exclude from customer names

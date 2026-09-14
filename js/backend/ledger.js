@@ -7,12 +7,14 @@ function confirmTransaction() {
   const ext = state.currentExtraction;
 
   // Find or Create Customer Profile
-  let customer = state.customers.find(c => c.name.toLowerCase() === ext.customerName.toLowerCase());
+  const custKey = ext.customerName.toLowerCase().trim();
+  const savedPhones = JSON.parse(localStorage.getItem('roznama_cust_phones') || '{}');
+  let customer = state.customers.find(c => c.name.toLowerCase().trim() === custKey);
   if (!customer) {
     customer = {
       id: `cust-${Date.now()}`,
       name: ext.customerName,
-      phone: "+91 9" + Math.floor(100000000 + Math.random() * 900000000),
+      phone: savedPhones[custKey] || '',
       totalJama: 0,
       totalUdhaar: 0,
       lastTransaction: new Date().toISOString().split('T')[0],
@@ -35,18 +37,22 @@ function confirmTransaction() {
     customerName: customer.name,
     type: ext.udhaarAmount > 0 ? "credit_debit" : "paid",
     paidAmount: ext.paidAmount,
+    jamaCash: ext.paidAmount,
     udhaarAmount: ext.udhaarAmount,
     items: ext.items,
     dueDate: ext.dueDate,
     dueDateLabel: ext.dueDateLabel,
     transcript: ext.transcript,
-    timestamp: new Date().toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true, month: 'short', day: 'numeric' })
+    timestamp: Date.now()
   };
 
   state.transactions.unshift(newTx);
   saveState();
   if (typeof saveTransactionOffline === 'function') {
     saveTransactionOffline(newTx);
+  }
+  if (typeof syncWithCloud === 'function') {
+    syncWithCloud();
   }
 
   // Play voice confirmation audio feedback

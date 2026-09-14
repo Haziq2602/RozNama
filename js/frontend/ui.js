@@ -104,10 +104,18 @@ function renderAll() {
 }
 
 function renderStats() {
-  const totalCashToday = state.transactions.reduce((acc, t) => acc + (t.paidAmount || 0), 0);
-  const totalUdhaarPending = state.customers.reduce((acc, c) => acc + (c.totalUdhaar || 0), 0);
+  const totalCashToday = state.transactions.reduce((acc, t) => {
+    const cash = t.jamaCash !== undefined ? Number(t.jamaCash) : Number(t.paidAmount || 0);
+    return acc + (isNaN(cash) ? 0 : cash);
+  }, 0);
+
+  const totalUdhaarPending = state.customers.reduce((acc, c) => {
+    const u = Number(c.totalUdhaar || 0);
+    return acc + (isNaN(u) ? 0 : u);
+  }, 0);
+
   const activeCustomers = state.customers.length;
-  const overdueReminders = state.customers.filter(c => c.totalUdhaar > 0).length;
+  const overdueReminders = state.customers.filter(c => Number(c.totalUdhaar || 0) > 0).length;
 
   const elCash = document.getElementById('statCashToday');
   const elUdhaar = document.getElementById('statUdhaarPending');
@@ -124,55 +132,132 @@ function renderTransactionTable() {
   const tableBody = document.getElementById('txTableBody');
   if (!tableBody) return;
 
-  tableBody.innerHTML = state.transactions.map(tx => `
-    <tr>
-      <td>
-        <div style="font-weight:600;">${tx.customerName}</div>
-        <div style="font-size:0.75rem; color:var(--text-dim);">${tx.timestamp}</div>
-      </td>
-      <td>
-        <span class="badge ${tx.udhaarAmount > 0 ? 'badge-udhaar' : 'badge-paid'}">
-          ${tx.items}
-        </span>
-      </td>
-      <td style="font-weight:700; color:#34D399;">₹${tx.paidAmount}</td>
-      <td style="font-weight:700; color:#FBBF24;">₹${tx.udhaarAmount}</td>
-      <td>
-        ${tx.dueDate ? `<span style="font-size:0.82rem; color:var(--accent-gold);">📅 ${tx.dueDateLabel}</span>` : '<span style="font-size:0.82rem; color:var(--text-muted);">None</span>'}
-      </td>
-    </tr>
-  `).join('');
+  if (!state.transactions || state.transactions.length === 0) {
+    tableBody.innerHTML = `
+      <tr>
+        <td colspan="5" style="text-align:center; color:var(--text-muted); padding:2rem;">
+          No transactions recorded yet. Tap microphone or speak to add your first khata note!
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  tableBody.innerHTML = state.transactions.map(tx => {
+    const paid = tx.jamaCash !== undefined ? Number(tx.jamaCash) : Number(tx.paidAmount || 0);
+    const udhaar = Number(tx.udhaarAmount || 0);
+    const itemsStr = Array.isArray(tx.items) ? tx.items.join(', ') : (tx.items || 'General Items');
+    const dueStr = tx.dueDateLabel || tx.dueDate || (udhaar > 0 ? 'Pending' : 'Settled');
+
+    // Format human readable date/time
+    let timeStr = 'Today';
+    if (typeof tx.timestamp === 'number') {
+      timeStr = new Date(tx.timestamp).toLocaleString('en-IN', {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } else if (tx.timestamp) {
+      timeStr = String(tx.timestamp);
+    }
+
+    return `
+      <tr>
+        <td>
+          <div style="font-weight:600; font-size:0.95rem;">${escapeHtml(tx.customerName || 'Walk-in Customer')}</div>
+          <div style="font-size:0.75rem; color:var(--text-dim);">${timeStr}</div>
+        </td>
+        <td>
+          <span class="badge ${udhaar > 0 ? 'badge-udhaar' : 'badge-paid'}">
+            ${escapeHtml(itemsStr)}
+          </span>
+        </td>
+        <td style="font-weight:700; color:#34D399;">₹${paid}</td>
+        <td style="font-weight:700; color:${udhaar > 0 ? '#FBBF24' : 'var(--text-muted)'};">₹${udhaar}</td>
+        <td>
+          ${udhaar > 0 
+            ? `<span style="font-size:0.82rem; color:var(--accent-gold); font-weight:600;">📅 ${escapeHtml(dueStr)}</span>`
+            : `<span style="font-size:0.82rem; color:#34D399;">✓ Full Cash</span>`}
+        </td>
+      </tr>
+    `;
+  }).join('');
 }
 
 function renderCustomerList() {
   const container = document.getElementById('customerListContainer');
   if (!container) return;
 
+  if (!state.customers || state.customers.length === 0) {
+    container.innerHTML = `
+      <div style="text-align:center; color:var(--text-muted); padding:2rem; font-size:0.9rem;">
+        No customer khatas active. Add your first voice entry to build customer accounts.
+      </div>
+    `;
+    return;
+  }
+
+  // Load saved phone numbers from localStorage
+  const savedPhones = JSON.parse(localStorage.getItem('roznama_cust_phones') || '{}');
+
   container.innerHTML = state.customers.map(cust => {
+    const custKey = cust.name.toLowerCase().trim();
+    const phone = savedPhones[custKey] || cust.phone || '';
+    const cleanPhone = phone.replace(/[^0-9]/g, '');
+
     const whatsappMsg = encodeURIComponent(
       `Namaste ${cust.name} ji, RozNama Store Ledger update: Aapke pass ₹${cust.totalUdhaar} ka baki udhaar balance hai. Kripya jald bhugtan karein. Dhanyawad!`
     );
-    const waLink = `https://api.whatsapp.com/send?phone=${cust.phone.replace(/[^0-9]/g, '')}&text=${whatsappMsg}`;
+
+    const waLink = cleanPhone 
+      ? `https://api.whatsapp.com/send?phone=${cleanPhone.length === 10 ? '91' + cleanPhone : cleanPhone}&text=${whatsappMsg}`
+      : `javascript:promptCustomerPhone('${cust.name}')`;
 
     return `
       <div class="customer-item">
         <div>
-          <div class="cust-name">${cust.name}</div>
-          <div class="cust-phone">${cust.phone}</div>
+          <div class="cust-name">${escapeHtml(cust.name)}</div>
+          <div class="cust-phone" onclick="promptCustomerPhone('${escapeHtml(cust.name)}')">
+            ${phone ? `📱 ${phone}` : '<span style="color:#60A5FA; cursor:pointer; text-decoration:underline;">+ Add Customer Phone</span>'}
+          </div>
         </div>
         <div class="cust-debt">
-          <div class="cust-debt-val">₹${cust.totalUdhaar} Udhaar</div>
+          <div class="cust-debt-val" style="color:${cust.totalUdhaar > 0 ? '#FBBF24' : '#34D399'};">
+            ₹${cust.totalUdhaar} ${cust.totalUdhaar > 0 ? 'Udhaar' : 'Settled'}
+          </div>
           ${cust.totalUdhaar > 0 ? `
-            <a href="${waLink}" target="_blank" class="btn-whatsapp">
-              📱 Remind WhatsApp
+            <a href="${waLink}" target="${cleanPhone ? '_blank' : '_self'}" class="btn-whatsapp" title="Send WhatsApp Payment Reminder">
+              💬 Remind WhatsApp
             </a>
           ` : `
-            <span style="font-size:0.75rem; color:#34D399;">Clear</span>
+            <span style="font-size:0.78rem; color:#34D399; font-weight:600;">✓ Nil Due</span>
           `}
         </div>
       </div>
     `;
   }).join('');
+}
+
+// Prompt Storekeeper to Add or Edit Customer Phone Number
+function promptCustomerPhone(customerName) {
+  const savedPhones = JSON.parse(localStorage.getItem('roznama_cust_phones') || '{}');
+  const custKey = customerName.toLowerCase().trim();
+  const currentPhone = savedPhones[custKey] || '';
+
+  const input = prompt(`Enter mobile phone number for ${customerName} (e.g. 9876543210):`, currentPhone);
+  if (input !== null) {
+    const cleaned = input.trim().replace(/[^0-9+]/g, '');
+    if (cleaned) {
+      savedPhones[custKey] = cleaned;
+      localStorage.setItem('roznama_cust_phones', JSON.stringify(savedPhones));
+      // Update customer object in state
+      const target = state.customers.find(c => c.name.toLowerCase().trim() === custKey);
+      if (target) target.phone = cleaned;
+      renderCustomerList();
+      showToast(`Phone saved for ${customerName}!`, 'success');
+    }
+  }
 }
 
 // Toast Notifications Helper

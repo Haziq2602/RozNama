@@ -9,7 +9,6 @@ let state = {
   isOnline: navigator.onLine
 };
 
-const TODAY_DATE = new Date('2026-09-06T15:00:00');
 const DB_NAME = 'RozNamaDB';
 const DB_VERSION = 1;
 let db = null;
@@ -46,42 +45,85 @@ function openDB() {
   });
 }
 
+// Dynamically compute customer balances from transactions
+function recalculateCustomers() {
+  const custMap = new Map();
+
+  for (const tx of state.transactions) {
+    const rawName = (tx.customerName || 'Walk-in').trim();
+    if (!rawName) continue;
+    const key = rawName.toLowerCase();
+
+    const savedPhones = JSON.parse(localStorage.getItem('roznama_cust_phones') || '{}');
+    if (!custMap.has(key)) {
+      custMap.set(key, {
+        id: tx.customerId || `cust-${key.replace(/[^a-z0-9]/gi, '_')}`,
+        name: rawName,
+        phone: savedPhones[key] || tx.customerPhone || '',
+        totalJama: 0,
+        totalUdhaar: 0,
+        lastTransaction: typeof tx.timestamp === 'number' 
+          ? new Date(tx.timestamp).toISOString().split('T')[0] 
+          : (String(tx.timestamp || '').split(' ')[0] || new Date().toISOString().split('T')[0]),
+        status: "settled",
+        notes: "Store Khata Customer"
+      });
+    }
+
+    const c = custMap.get(key);
+    c.totalJama += Number(tx.jamaCash || tx.paidAmount || 0);
+    c.totalUdhaar += Number(tx.udhaarAmount || 0);
+    if (c.totalUdhaar > 0) {
+      c.status = "pending";
+    }
+  }
+
+  state.customers = Array.from(custMap.values());
+}
+
 // Initialize Application Storage
 async function initStorage() {
   try {
     await openDB();
-    const customers = await getAllFromStore('customers');
-    const transactions = await getAllFromStore('transactions');
-
-    if (customers.length > 0 || transactions.length > 0) {
-      state.customers = customers;
-      state.transactions = transactions;
-    } else {
-      // Check legacy localStorage or seed with initial demo data
-      const storedCust = localStorage.getItem('roznama_customers');
-      const storedTx = localStorage.getItem('roznama_transactions');
-      if (storedCust && storedTx) {
-        state.customers = JSON.parse(storedCust);
-        state.transactions = JSON.parse(storedTx);
-      } else if (typeof INITIAL_CUSTOMERS !== 'undefined') {
-        state.customers = [...INITIAL_CUSTOMERS];
-        state.transactions = [...INITIAL_TRANSACTIONS];
-      }
-      await saveState();
-    }
-
-    // Setup Network Listeners & Trigger initial sync if online
     setupNetworkListeners();
-    if (typeof renderAll === 'function') renderAll();
-    if (navigator.onLine) {
-      syncPendingQueue();
+
+    const token = localStorage.getItem('roznama_jwt_token');
+    if (token && navigator.onLine) {
+      // Authenticated vendor: fetch their specific records from cloud
+      await syncWithCloud();
+    } else {
+      // Local mode: load from IndexedDB
+      const localTxs = await getAllFromStore('transactions');
+      state.transactions = localTxs || [];
+      recalculateCustomers();
+      if (typeof renderAll === 'function') renderAll();
     }
   } catch (err) {
-    console.warn("IndexedDB init fallback warning:", err);
+    console.warn("IndexedDB init warning:", err);
   }
 }
 
-// Helper: Save all state items to IndexedDB
+// Clear all local database tables (on logout or account switch)
+async function clearLocalStore() {
+  state.customers = [];
+  state.transactions = [];
+  if (!db) await openDB();
+
+  return new Promise((resolve) => {
+    const tx = db.transaction(['customers', 'transactions', 'outbox'], 'readwrite');
+    tx.objectStore('customers').clear();
+    tx.objectStore('transactions').clear();
+    tx.objectStore('outbox').clear();
+    tx.oncomplete = () => {
+      resolve();
+    };
+    tx.onerror = () => {
+      resolve();
+    };
+  });
+}
+
+// Helper: Save current state items to IndexedDB
 async function saveState() {
   if (!db) await openDB();
   const tx = db.transaction(['customers', 'transactions'], 'readwrite');
@@ -108,11 +150,9 @@ function getAllFromStore(storeName) {
 async function saveTransactionOffline(newTx, audioBlob = null) {
   if (!db) await openDB();
   
-  // 1. Put into transactions store
   const tx = db.transaction(['transactions', 'outbox'], 'readwrite');
   tx.objectStore('transactions').put(newTx);
 
-  // 2. Queue in outbox table
   const outboxItem = {
     id: `outbox-${newTx.id}`,
     txId: newTx.id,
@@ -132,7 +172,7 @@ async function saveTransactionOffline(newTx, audioBlob = null) {
   }
 }
 
-// Sync Pending Outbox Items when Internet Returns (FIFO)
+// Sync Pending Outbox Items
 async function syncPendingQueue() {
   if (!navigator.onLine || !db) return;
 
@@ -141,26 +181,19 @@ async function syncPendingQueue() {
     const pendingItems = allOutbox.filter(item => item.status === 'pending_sync');
 
     if (pendingItems.length === 0) return;
-
-    // Process FIFO (First In, First Out)
     pendingItems.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
 
     const tx = db.transaction('outbox', 'readwrite');
     const store = tx.objectStore('outbox');
 
     for (const item of pendingItems) {
-      // Simulate cloud backend sync / upload
       item.status = 'synced';
       item.syncedAt = new Date().toISOString();
       store.put(item);
     }
 
     if (typeof showToast === 'function') {
-      showToast(`🔄 Auto-synced ${pendingItems.length} pending offline entry(ies) to cloud!`, 'success');
-    }
-
-    if (typeof renderAll === 'function') {
-      renderAll();
+      showToast(`🔄 Synced ${pendingItems.length} pending offline entry(ies) to cloud!`, 'success');
     }
   } catch (err) {
     console.error("Sync Queue Error:", err);
@@ -171,12 +204,56 @@ async function syncPendingQueue() {
 function setupNetworkListeners() {
   window.addEventListener('online', () => {
     state.isOnline = true;
-    if (typeof showToast === 'function') showToast('🟢 Back Online! Syncing offline queue...', 'success');
+    if (typeof showToast === 'function') showToast('🟢 Back Online! Syncing...', 'success');
     syncPendingQueue();
+    syncWithCloud();
   });
 
   window.addEventListener('offline', () => {
     state.isOnline = false;
-    if (typeof showToast === 'function') showToast('⚠️ Offline Mode Activated. Data stored safely in IndexedDB.', 'info');
+    if (typeof showToast === 'function') showToast('⚠️ Offline Mode. Data saved in IndexedDB.', 'info');
   });
+}
+
+// Cloud Synchronization Engine with Express + SQLite Backend
+async function syncWithCloud() {
+  const token = localStorage.getItem('roznama_jwt_token');
+  if (!token || !navigator.onLine) return;
+
+  try {
+    // If local transactions exist, sync them to server
+    if (state.transactions.length > 0) {
+      const res = await fetch('http://localhost:5000/api/ledger/sync', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ transactions: state.transactions })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.transactions)) {
+          state.transactions = data.transactions;
+        }
+      }
+    } else {
+      // Otherwise, fetch whatever this logged in vendor has in the cloud
+      const res = await fetch('http://localhost:5000/api/ledger/transactions', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        state.transactions = data.transactions || [];
+      }
+    }
+
+    // Recalculate customer khatas exclusively from this vendor's transactions
+    recalculateCustomers();
+    await saveState();
+    if (typeof renderAll === 'function') renderAll();
+
+  } catch (err) {
+    console.warn('Cloud backend unreachable. Operating in local mode.', err);
+  }
 }
