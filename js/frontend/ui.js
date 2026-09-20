@@ -53,22 +53,22 @@ function renderExtractionCard() {
       <div class="entity-grid">
         <div class="entity-field">
           <div class="entity-label">Customer Name ✏️</div>
-          <input type="text" id="editCustName" class="transcript-input" style="padding:0.4rem 0.6rem; font-weight:700;" value="${ext.customerName}" onchange="updateExtField('customerName', this.value)">
+          <input type="text" id="editCustName" class="transcript-input" style="padding:0.5rem 0.75rem; font-weight:700;" value="${escapeHtml(ext.customerName)}" onchange="updateExtField('customerName', this.value)">
         </div>
 
         <div class="entity-field">
           <div class="entity-label">Cash Received Today (₹) ✏️</div>
-          <input type="number" id="editPaidAmount" class="transcript-input" style="padding:0.4rem 0.6rem; font-weight:700; color:#34D399;" value="${ext.paidAmount}" onchange="updateExtField('paidAmount', parseInt(this.value, 10) || 0)">
+          <input type="number" id="editPaidAmount" class="transcript-input" style="padding:0.5rem 0.75rem; font-weight:700; color:#34D399;" value="${ext.paidAmount}" onchange="updateExtField('paidAmount', parseInt(this.value, 10) || 0)">
         </div>
 
         <div class="entity-field">
           <div class="entity-label">Udhaar / Credit Added (₹) ✏️</div>
-          <input type="number" id="editUdhaarAmount" class="transcript-input" style="padding:0.4rem 0.6rem; font-weight:700; color:#FBBF24;" value="${ext.udhaarAmount}" onchange="updateExtField('udhaarAmount', parseInt(this.value, 10) || 0)">
+          <input type="number" id="editUdhaarAmount" class="transcript-input" style="padding:0.5rem 0.75rem; font-weight:700; color:#FBBF24;" value="${ext.udhaarAmount}" onchange="updateExtField('udhaarAmount', parseInt(this.value, 10) || 0)">
         </div>
 
         <div class="entity-field">
           <div class="entity-label">Purchased Items ✏️</div>
-          <input type="text" id="editItems" class="transcript-input" style="padding:0.4rem 0.6rem; font-size:0.9rem;" value="${ext.items}" onchange="updateExtField('items', this.value)">
+          <input type="text" id="editItems" class="transcript-input" style="padding:0.5rem 0.75rem;" value="${escapeHtml(ext.items)}" onchange="updateExtField('items', this.value)">
         </div>
 
         <div class="entity-field">
