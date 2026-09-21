@@ -1,24 +1,45 @@
-// RozNama Vendor Authentication & Cloud Sync Manager
-
-const API_BASE_URL = 'http://localhost:5000/api';
+// Dynamic API base URL: relative path in web server / Vercel, localhost fallback on file://
+const API_BASE_URL = window.location.protocol === 'file:' ? 'http://localhost:5000/api' : '/api';
 
 const authState = {
   token: localStorage.getItem('roznama_jwt_token') || null,
-  user: JSON.parse(localStorage.getItem('roznama_user') || 'null')
+  user: JSON.parse(localStorage.getItem('roznama_user') || 'null'),
+  isGuest: localStorage.getItem('roznama_guest_mode') === 'true'
 };
 
-// Initialize Auth System
+// Check if vendor has an active session or guest mode
+function hasActiveSession() {
+  return !!((authState.token && authState.user) || authState.isGuest);
+}
+
+// Synchronize visibility between Auth Landing View and Main Dashboard
+function updateAuthVisibility() {
+  const hasSession = hasActiveSession();
+  document.documentElement.classList.toggle('has-auth-session', hasSession);
+
+  const landingView = document.getElementById('authLandingView');
+  const mainDashboard = document.getElementById('mainDashboard');
+
+  if (landingView) {
+    landingView.style.display = hasSession ? 'none' : 'flex';
+  }
+  if (mainDashboard) {
+    mainDashboard.style.display = hasSession ? 'block' : 'none';
+  }
+}
+
+// Initialize Auth System on DOM load
 document.addEventListener('DOMContentLoaded', () => {
+  updateAuthVisibility();
   renderAuthHeader();
-  injectAuthModal();
-  bindAuthEvents();
+  bindLandingAuthEvents();
   
   if (authState.token) {
     verifySession();
   }
 });
 
-// Render Header Vendor Status Badge
+// Render Header Vendor Status Badge in Dashboard
 function renderAuthHeader() {
   const headerActions = document.querySelector('.header-actions');
   if (!headerActions) return;
@@ -36,169 +57,77 @@ function renderAuthHeader() {
       <div class="vendor-profile-badge" title="Logged in as ${escapeHtml(authState.user.name)}">
         <span class="online-indicator"></span>
         <span class="vendor-name">🏪 ${escapeHtml(authState.user.storeName || authState.user.name)}</span>
-        <button class="logout-btn" id="logoutBtn" title="Log Out">🚪</button>
+        <button class="logout-btn" id="logoutBtn" title="Log Out of Store">🚪</button>
       </div>
     `;
+    const logoutBtn = document.getElementById('logoutBtn');
+    if (logoutBtn) logoutBtn.addEventListener('click', handleLogout);
+  } else if (authState.isGuest) {
+    authPill.innerHTML = `
+      <div class="vendor-profile-badge" title="Running in Guest / Offline Mode">
+        <span class="vendor-name" style="color: #94a3b8;">👤 Guest Store</span>
+        <button class="action-btn" id="guestUpgradeBtn" style="padding: 4px 10px; font-size: 0.78rem;">Register</button>
+        <button class="logout-btn" id="logoutBtn" title="Exit Guest Mode">🚪</button>
+      </div>
+    `;
+    const guestUpgradeBtn = document.getElementById('guestUpgradeBtn');
+    if (guestUpgradeBtn) guestUpgradeBtn.addEventListener('click', handleLogout);
     const logoutBtn = document.getElementById('logoutBtn');
     if (logoutBtn) logoutBtn.addEventListener('click', handleLogout);
   } else {
     authPill.innerHTML = `
       <button class="action-btn auth-btn" id="openAuthModalBtn">
-        🔐 Vendor Login / Register
+        🔐 Register / Login
       </button>
     `;
     const openBtn = document.getElementById('openAuthModalBtn');
-    if (openBtn) openBtn.addEventListener('click', openAuthModal);
+    if (openBtn) {
+      openBtn.addEventListener('click', () => {
+        handleLogout();
+      });
+    }
   }
 }
 
-// Inject Auth Modal HTML into DOM
-function injectAuthModal() {
-  if (document.getElementById('authModalOverlay')) return;
+// Bind Events for Landing Page Registration & Login
+function bindLandingAuthEvents() {
+  const tabRegBtn = document.getElementById('landingTabRegisterBtn');
+  const tabLoginBtn = document.getElementById('landingTabLoginBtn');
+  const regForm = document.getElementById('landingRegisterForm');
+  const loginForm = document.getElementById('landingLoginForm');
+  const guestBtn = document.getElementById('landingGuestBtn');
 
-  const modalHtml = `
-    <div id="authModalOverlay" class="auth-modal-overlay" style="display: none;">
-      <div class="auth-modal-card">
-        <button class="modal-close-btn" id="closeAuthModalBtn">&times;</button>
-        
-        <div class="auth-modal-header">
-          <h2 class="auth-title">RozNama Vendor Account</h2>
-          <p class="auth-subtitle">Sync khata ledgers safely across all your devices & cloud</p>
-        </div>
-
-        <div class="auth-tabs">
-          <button id="tabLoginBtn" class="auth-tab active">Log In</button>
-          <button id="tabRegisterBtn" class="auth-tab">Register New Store</button>
-        </div>
-
-        <!-- Login Form -->
-        <form id="loginForm" class="auth-form">
-          <div class="form-group">
-            <label for="loginPhone">📱 Mobile Phone Number</label>
-            <input type="tel" id="loginPhone" placeholder="e.g. 9876543210" required />
-          </div>
-          <div class="form-group">
-            <label for="loginPassword">🔑 Password / PIN</label>
-            <input type="password" id="loginPassword" placeholder="Enter your password" required />
-          </div>
-          <div id="loginError" class="auth-error" style="display: none;"></div>
-          <button type="submit" class="auth-submit-btn">Login & Sync Ledger</button>
-        </form>
-
-        <!-- Register Form -->
-        <form id="registerForm" class="auth-form" style="display: none;">
-          <div class="form-group">
-            <label for="regName">👤 Store Owner Name</label>
-            <input type="text" id="regName" placeholder="e.g. Ramesh Gupta" required />
-          </div>
-          <div class="form-group">
-            <label for="regStoreName">🏪 Kirana / Store Name</label>
-            <input type="text" id="regStoreName" placeholder="e.g. Gupta General Store" required />
-          </div>
-          <div class="form-group">
-            <label for="regPhone">📱 Mobile Phone Number</label>
-            <input type="tel" id="regPhone" placeholder="e.g. 9876543210" required />
-          </div>
-          <div class="form-group">
-            <label for="regPassword">🔑 Create Password / PIN</label>
-            <input type="password" id="regPassword" placeholder="Minimum 4 characters" required />
-          </div>
-          <div id="regError" class="auth-error" style="display: none;"></div>
-          <button type="submit" class="auth-submit-btn">Create Vendor Account</button>
-        </form>
-      </div>
-    </div>
-  `;
-
-  document.body.insertAdjacentHTML('beforeend', modalHtml);
-}
-
-// Bind Auth UI Events
-function bindAuthEvents() {
-  const overlay = document.getElementById('authModalOverlay');
-  const closeBtn = document.getElementById('closeAuthModalBtn');
-  const tabLoginBtn = document.getElementById('tabLoginBtn');
-  const tabRegisterBtn = document.getElementById('tabRegisterBtn');
-  const loginForm = document.getElementById('loginForm');
-  const registerForm = document.getElementById('registerForm');
-
-  if (closeBtn) closeBtn.addEventListener('click', closeAuthModal);
-  
-  if (overlay) {
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) closeAuthModal();
+  // Tab switching
+  if (tabRegBtn && tabLoginBtn && regForm && loginForm) {
+    tabRegBtn.addEventListener('click', () => {
+      tabRegBtn.classList.add('active');
+      tabLoginBtn.classList.remove('active');
+      regForm.style.display = 'block';
+      loginForm.style.display = 'none';
+      const regErr = document.getElementById('landingRegError');
+      if (regErr) regErr.style.display = 'none';
     });
-  }
 
-  if (tabLoginBtn && tabRegisterBtn) {
     tabLoginBtn.addEventListener('click', () => {
       tabLoginBtn.classList.add('active');
-      tabRegisterBtn.classList.remove('active');
+      tabRegBtn.classList.remove('active');
       loginForm.style.display = 'block';
-      registerForm.style.display = 'none';
-    });
-
-    tabRegisterBtn.addEventListener('click', () => {
-      tabRegisterBtn.classList.add('active');
-      tabLoginBtn.classList.remove('active');
-      loginForm.style.display = 'none';
-      registerForm.style.display = 'block';
+      regForm.style.display = 'none';
+      const loginErr = document.getElementById('landingLoginError');
+      if (loginErr) loginErr.style.display = 'none';
     });
   }
 
-  if (loginForm) {
-    loginForm.addEventListener('submit', async (e) => {
+  // Registration Form Handler
+  if (regForm) {
+    regForm.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const phone = document.getElementById('loginPhone').value.trim();
-      const password = document.getElementById('loginPassword').value.trim();
-      const errDiv = document.getElementById('loginError');
-      errDiv.style.display = 'none';
-
-      try {
-        const res = await fetch(`${API_BASE_URL}/auth/login`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phone, password })
-        });
-        const data = await res.json();
-
-        if (!res.ok) {
-          errDiv.textContent = data.error || 'Login failed.';
-          errDiv.style.display = 'block';
-          return;
-        }
-
-        // Clean previous session state
-        if (typeof clearLocalStore === 'function') {
-          await clearLocalStore();
-        }
-
-        saveAuthSession(data.token, data.user);
-        closeAuthModal();
-        showToast(`Welcome back, ${data.user.name}! Loaded ${data.user.storeName}.`, 'success');
-
-        // Fetch this vendor's transactions exclusively
-        if (typeof syncWithCloud === 'function') {
-          await syncWithCloud();
-        }
-
-      } catch (err) {
-        console.error('Login request failed:', err);
-        errDiv.textContent = 'Server connection failed. Ensure backend server is running.';
-        errDiv.style.display = 'block';
-      }
-    });
-  }
-
-  if (registerForm) {
-    registerForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const name = document.getElementById('regName').value.trim();
-      const storeName = document.getElementById('regStoreName').value.trim();
-      const phone = document.getElementById('regPhone').value.trim();
-      const password = document.getElementById('regPassword').value.trim();
-      const errDiv = document.getElementById('regError');
-      errDiv.style.display = 'none';
+      const name = document.getElementById('landingRegName').value.trim();
+      const storeName = document.getElementById('landingRegStoreName').value.trim();
+      const phone = document.getElementById('landingRegPhone').value.trim();
+      const password = document.getElementById('landingRegPassword').value.trim();
+      const errDiv = document.getElementById('landingRegError');
+      if (errDiv) errDiv.style.display = 'none';
 
       try {
         const res = await fetch(`${API_BASE_URL}/auth/register`, {
@@ -209,59 +138,128 @@ function bindAuthEvents() {
         const data = await res.json();
 
         if (!res.ok) {
-          errDiv.textContent = data.error || 'Registration failed.';
-          errDiv.style.display = 'block';
+          if (errDiv) {
+            errDiv.textContent = data.error || 'Registration failed.';
+            errDiv.style.display = 'block';
+          }
           return;
         }
 
-        // New vendor starts completely empty
+        // Fresh vendor setup
         if (typeof clearLocalStore === 'function') {
           await clearLocalStore();
         }
 
         saveAuthSession(data.token, data.user);
-        closeAuthModal();
-        showToast(`Account created for ${data.user.storeName}! Ready to log sales.`, 'success');
+        showToast(`Store registered! Welcome to RozNama, ${data.user.name}.`, 'success');
 
         if (typeof renderAll === 'function') {
           renderAll();
         }
 
       } catch (err) {
-        console.error('Register request failed:', err);
-        errDiv.textContent = 'Server connection failed. Ensure backend server is running.';
-        errDiv.style.display = 'block';
+        console.error('Registration failed:', err);
+        if (errDiv) {
+          errDiv.textContent = 'Server connection failed. Ensure backend server is running.';
+          errDiv.style.display = 'block';
+        }
       }
     });
   }
-}
 
-function openAuthModal() {
-  const overlay = document.getElementById('authModalOverlay');
-  if (overlay) overlay.style.display = 'flex';
-}
+  // Login Form Handler
+  if (loginForm) {
+    loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const phone = document.getElementById('landingLoginPhone').value.trim();
+      const password = document.getElementById('landingLoginPassword').value.trim();
+      const errDiv = document.getElementById('landingLoginError');
+      if (errDiv) errDiv.style.display = 'none';
 
-function closeAuthModal() {
-  const overlay = document.getElementById('authModalOverlay');
-  if (overlay) overlay.style.display = 'none';
+      try {
+        const res = await fetch(`${API_BASE_URL}/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone, password })
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          if (errDiv) {
+            errDiv.textContent = data.error || 'Login failed.';
+            errDiv.style.display = 'block';
+          }
+          return;
+        }
+
+        if (typeof clearLocalStore === 'function') {
+          await clearLocalStore();
+        }
+
+        saveAuthSession(data.token, data.user);
+        showToast(`Welcome back, ${data.user.name}! Loaded ${data.user.storeName}.`, 'success');
+
+        if (typeof syncWithCloud === 'function') {
+          await syncWithCloud();
+        }
+        if (typeof renderAll === 'function') {
+          renderAll();
+        }
+
+      } catch (err) {
+        console.error('Login failed:', err);
+        if (errDiv) {
+          errDiv.textContent = 'Server connection failed. Ensure backend server is running.';
+          errDiv.style.display = 'block';
+        }
+      }
+    });
+  }
+
+  // Guest Access Handler
+  if (guestBtn) {
+    guestBtn.addEventListener('click', () => {
+      authState.token = null;
+      authState.user = null;
+      authState.isGuest = true;
+      localStorage.setItem('roznama_guest_mode', 'true');
+      localStorage.removeItem('roznama_jwt_token');
+      localStorage.removeItem('roznama_user');
+
+      updateAuthVisibility();
+      renderAuthHeader();
+      if (typeof renderAll === 'function') {
+        renderAll();
+      }
+      showToast('Exploring RozNama in Guest mode.', 'info');
+    });
+  }
 }
 
 function saveAuthSession(token, user) {
   authState.token = token;
   authState.user = user;
+  authState.isGuest = false;
   localStorage.setItem('roznama_jwt_token', token);
   localStorage.setItem('roznama_user', JSON.stringify(user));
+  localStorage.removeItem('roznama_guest_mode');
+
+  updateAuthVisibility();
   renderAuthHeader();
 }
 
 async function handleLogout() {
   authState.token = null;
   authState.user = null;
+  authState.isGuest = false;
   localStorage.removeItem('roznama_jwt_token');
   localStorage.removeItem('roznama_user');
+  localStorage.removeItem('roznama_guest_mode');
+
+  updateAuthVisibility();
   renderAuthHeader();
 
-  // Clear memory and IndexedDB
+  // Clear memory and local cache
   if (typeof clearLocalStore === 'function') {
     await clearLocalStore();
   }
@@ -269,7 +267,7 @@ async function handleLogout() {
     renderAll();
   }
 
-  showToast('Logged out. Ledger reset.', 'info');
+  showToast('Logged out. Please log in or register.', 'info');
 }
 
 async function verifySession() {
@@ -286,7 +284,7 @@ async function verifySession() {
       renderAuthHeader();
     }
   } catch (err) {
-    console.warn('Backend server offline. Continuing in local IndexedDB mode.');
+    console.warn('Backend server offline. Continuing in local mode.');
   }
 }
 

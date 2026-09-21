@@ -66,14 +66,117 @@ Transcript: "${transcript.trim()}"`;
     const rawContent = groqData.choices?.[0]?.message?.content;
     const parsed = JSON.parse(rawContent);
 
+    // Helper to calculate exact date from transcript or LLM hint
+    function calculateDueDate(text, spokenHint) {
+      const combined = `${text || ''} ${spokenHint || ''}`.toLowerCase();
+      const today = new Date();
+      
+      const formatYMD = (d) => {
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      };
+
+      const addDays = (num) => {
+        const d = new Date(today);
+        d.setDate(d.getDate() + num);
+        return d;
+      };
+
+      // 1. Day after tomorrow / parso
+      if (combined.includes('day after tomorrow') || combined.includes('parso') || combined.includes('after tomorrow')) {
+        const target = addDays(2);
+        return {
+          dueDate: formatYMD(target),
+          dueDateLabel: 'Day after tomorrow'
+        };
+      }
+
+      // 2. Tomorrow / kal
+      if (combined.includes('tomorrow') || /\bkal\b/.test(combined)) {
+        const target = addDays(1);
+        return {
+          dueDate: formatYMD(target),
+          dueDateLabel: 'Tomorrow'
+        };
+      }
+
+      // 3. "in X days" / "after X days" / "X din baad"
+      const daysMatch = combined.match(/\b(?:in|after)?\s*(\d+)\s*(?:days?|din)\b/i);
+      if (daysMatch && daysMatch[1]) {
+        const n = parseInt(daysMatch[1], 10);
+        if (n > 0 && n <= 365) {
+          const target = addDays(n);
+          return {
+            dueDate: formatYMD(target),
+            dueDateLabel: `In ${n} days`
+          };
+        }
+      }
+
+      // 4. "next week" / "agle hafte"
+      if (combined.includes('next week') || combined.includes('agle hafte') || combined.includes('1 week')) {
+        const target = addDays(7);
+        return {
+          dueDate: formatYMD(target),
+          dueDateLabel: 'Next week'
+        };
+      }
+
+      // 5. Specific weekdays
+      const weekdays = [
+        { names: ['sunday', 'itwar', 'ravivar'], dayIndex: 0 },
+        { names: ['monday', 'somwar'], dayIndex: 1 },
+        { names: ['tuesday', 'mangalwar'], dayIndex: 2 },
+        { names: ['wednesday', 'budhwar'], dayIndex: 3 },
+        { names: ['thursday', 'guruwar', 'veervar'], dayIndex: 4 },
+        { names: ['friday', 'shukrawar', 'jumma'], dayIndex: 5 },
+        { names: ['saturday', 'shaniwar'], dayIndex: 6 }
+      ];
+
+      for (const wd of weekdays) {
+        if (wd.names.some(name => combined.includes(name))) {
+          let diff = wd.dayIndex - today.getDay();
+          if (diff <= 0) diff += 7;
+          const target = addDays(diff);
+          const capName = wd.names[0].charAt(0).toUpperCase() + wd.names[0].slice(1);
+          return {
+            dueDate: formatYMD(target),
+            dueDateLabel: `Upcoming ${capName}`
+          };
+        }
+      }
+
+      // 6. Direct YYYY-MM-DD
+      const directMatch = combined.match(/\b(20\d\d-\d{2}-\d{2})\b/);
+      if (directMatch) {
+        return {
+          dueDate: directMatch[1],
+          dueDateLabel: directMatch[1]
+        };
+      }
+
+      // 7. Default if udhaar exists but no date spoken: Tomorrow
+      const defaultTarget = addDays(1);
+      return {
+        dueDate: formatYMD(defaultTarget),
+        dueDateLabel: 'Tomorrow (Default)'
+      };
+    }
+
+    const paidAmount = Number(parsed.jamaCash || 0);
+    const udhaarAmount = Number(parsed.udhaarAmount || 0);
+    const dateInfo = udhaarAmount > 0 ? calculateDueDate(transcript, parsed.dueDate) : { dueDate: '', dueDateLabel: 'Settled' };
+
     // Normalize output
     const extracted = {
       customerName: parsed.customerName || 'Walk-in Customer',
-      paidAmount: Number(parsed.jamaCash || 0),
-      udhaarAmount: Number(parsed.udhaarAmount || 0),
-      items: parsed.items || 'General Kirana Items',
-      dueDate: parsed.dueDate || '',
-      dueDateLabel: parsed.dueDate || (parsed.udhaarAmount > 0 ? 'Pending' : 'Settled'),
+      paidAmount,
+      udhaarAmount,
+      items: parsed.items || 'General Items',
+      dueDate: dateInfo.dueDate,
+      dueDateLabel: dateInfo.dueDateLabel,
       transcript: transcript.trim()
     };
 

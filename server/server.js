@@ -21,14 +21,35 @@ app.use('/api/auth', authRoutes);
 app.use('/api/ledger', ledgerRoutes);
 app.use('/api/ai', aiRoutes);
 
+const { isSupabaseConfigured } = require('./db');
+
 // Health Check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', app: 'RozNama Server', timestamp: new Date().toISOString() });
+  res.json({
+    status: 'ok',
+    app: 'RozNama Server',
+    database: isSupabaseConfigured ? 'Supabase Cloud (PostgreSQL)' : 'Local SQLite (roznama.db)',
+    timestamp: new Date().toISOString()
+  });
 });
 
 // Serve frontend static files if hosted together
 app.use(express.static(path.join(__dirname, '..')));
 
-app.listen(PORT, () => {
-  console.log(`🚀 RozNama Server running on http://localhost:${PORT}`);
-});
+if (require.main === module) {
+  const server = app.listen(PORT, () => {
+    console.log(`🚀 RozNama Server running on http://localhost:${PORT}`);
+  });
+
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`\n⚠️ Port ${PORT} is already in use by another running server instance.`);
+      console.error(`💡 Tip: Close the other terminal window running RozNama, or kill the process on port ${PORT}.\n`);
+      process.exit(1);
+    } else {
+      throw err;
+    }
+  });
+}
+
+module.exports = app;

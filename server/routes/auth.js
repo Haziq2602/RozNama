@@ -1,7 +1,7 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { dbQuery } = require('../db');
+const { dbService } = require('../db');
 const { authenticateToken, JWT_SECRET } = require('../middleware/auth');
 
 const router = express.Router();
@@ -18,7 +18,7 @@ router.post('/register', async (req, res) => {
     const cleanedPhone = phone.trim();
     
     // Check if phone already registered
-    const existingUser = await dbQuery.get('SELECT id FROM users WHERE phone = ?', [cleanedPhone]);
+    const existingUser = await dbService.getUserByPhone(cleanedPhone);
     if (existingUser) {
       return res.status(409).json({ error: 'Phone number is already registered. Please log in instead.' });
     }
@@ -29,13 +29,15 @@ router.post('/register', async (req, res) => {
 
     const store = storeName ? storeName.trim() : 'Kirana Store';
 
-    // Insert user
-    const result = await dbQuery.run(
-      'INSERT INTO users (phone, name, store_name, password_hash) VALUES (?, ?, ?, ?)',
-      [cleanedPhone, name.trim(), store, passwordHash]
-    );
+    // Insert user via unified dbService (Supabase or SQLite)
+    const newUser = await dbService.createUser({
+      phone: cleanedPhone,
+      name: name.trim(),
+      storeName: store,
+      passwordHash
+    });
 
-    const userId = result.lastID;
+    const userId = newUser.id;
     const token = jwt.sign(
       { userId, phone: cleanedPhone, name: name.trim() },
       JWT_SECRET,
@@ -69,7 +71,7 @@ router.post('/login', async (req, res) => {
     }
 
     const cleanedPhone = phone.trim();
-    const user = await dbQuery.get('SELECT * FROM users WHERE phone = ?', [cleanedPhone]);
+    const user = await dbService.getUserByPhone(cleanedPhone);
 
     if (!user) {
       return res.status(404).json({ error: 'Account not found with this phone number.' });
@@ -106,7 +108,7 @@ router.post('/login', async (req, res) => {
 // Get Current User Profile
 router.get('/me', authenticateToken, async (req, res) => {
   try {
-    const user = await dbQuery.get('SELECT id, phone, name, store_name, created_at FROM users WHERE id = ?', [req.user.userId]);
+    const user = await dbService.getUserById(req.user.userId);
     if (!user) {
       return res.status(404).json({ error: 'User not found.' });
     }

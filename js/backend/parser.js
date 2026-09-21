@@ -1,7 +1,106 @@
 // RozNama Intelligence Engine - Natural Language Parsing & Entity Extraction
 
-// Toggle to switch between Groq LLM extraction (90-98% accuracy) and manual regex
+// Toggle to switch between Groq LLM extraction and manual regex
 const USE_AI_EXTRACTION = true;
+
+// Helper to calculate exact date from transcript or spoken hint
+function calculateDueDate(text, spokenHint) {
+  const combined = `${text || ''} ${spokenHint || ''}`.toLowerCase();
+  const today = new Date();
+  
+  const formatYMD = (d) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const addDays = (num) => {
+    const d = new Date(today);
+    d.setDate(d.getDate() + num);
+    return d;
+  };
+
+  // 1. Day after tomorrow / parso
+  if (combined.includes('day after tomorrow') || combined.includes('parso') || combined.includes('after tomorrow')) {
+    const target = addDays(2);
+    return {
+      dueDate: formatYMD(target),
+      dueDateLabel: 'Day after tomorrow'
+    };
+  }
+
+  // 2. Tomorrow / kal
+  if (combined.includes('tomorrow') || /\bkal\b/.test(combined)) {
+    const target = addDays(1);
+    return {
+      dueDate: formatYMD(target),
+      dueDateLabel: 'Tomorrow'
+    };
+  }
+
+  // 3. "in X days" / "after X days" / "X din baad"
+  const daysMatch = combined.match(/\b(?:in|after)?\s*(\d+)\s*(?:days?|din)\b/i);
+  if (daysMatch && daysMatch[1]) {
+    const n = parseInt(daysMatch[1], 10);
+    if (n > 0 && n <= 365) {
+      const target = addDays(n);
+      return {
+        dueDate: formatYMD(target),
+        dueDateLabel: `In ${n} days`
+      };
+    }
+  }
+
+  // 4. "next week" / "agle hafte"
+  if (combined.includes('next week') || combined.includes('agle hafte') || combined.includes('1 week')) {
+    const target = addDays(7);
+    return {
+      dueDate: formatYMD(target),
+      dueDateLabel: 'Next week'
+    };
+  }
+
+  // 5. Specific weekdays
+  const weekdays = [
+    { names: ['sunday', 'itwar', 'ravivar'], dayIndex: 0 },
+    { names: ['monday', 'somwar'], dayIndex: 1 },
+    { names: ['tuesday', 'mangalwar'], dayIndex: 2 },
+    { names: ['wednesday', 'budhwar'], dayIndex: 3 },
+    { names: ['thursday', 'guruwar', 'veervar'], dayIndex: 4 },
+    { names: ['friday', 'shukrawar', 'jumma'], dayIndex: 5 },
+    { names: ['saturday', 'shaniwar'], dayIndex: 6 }
+  ];
+
+  for (const wd of weekdays) {
+    if (wd.names.some(name => combined.includes(name))) {
+      let diff = wd.dayIndex - today.getDay();
+      if (diff <= 0) diff += 7;
+      const target = addDays(diff);
+      const capName = wd.names[0].charAt(0).toUpperCase() + wd.names[0].slice(1);
+      return {
+        dueDate: formatYMD(target),
+        dueDateLabel: `Upcoming ${capName}`
+      };
+    }
+  }
+
+  // 6. Direct YYYY-MM-DD
+  const directMatch = combined.match(/\b(20\d\d-\d{2}-\d{2})\b/);
+  if (directMatch) {
+    return {
+      dueDate: directMatch[1],
+      dueDateLabel: directMatch[1]
+    };
+  }
+
+  // 7. Default if udhaar exists but no date spoken: Tomorrow
+  const defaultTarget = addDays(1);
+  return {
+    dueDate: formatYMD(defaultTarget),
+    dueDateLabel: 'Tomorrow (Default)'
+  };
+}
 
 async function processTranscript(rawText) {
   if (!rawText || typeof rawText !== 'string' || !rawText.trim()) return;
@@ -11,10 +110,11 @@ async function processTranscript(rawText) {
   if (USE_AI_EXTRACTION && navigator.onLine) {
     try {
       if (typeof showToast === 'function') {
-        showToast('🧠 Analyzing voice note with AI...', 'info');
+        showToast('Processing voice note...', 'info');
       }
 
-      const res = await fetch('http://localhost:5000/api/ai/extract', {
+      const aiUrl = window.location.protocol === 'file:' ? 'http://localhost:5000/api/ai/extract' : '/api/ai/extract';
+      const res = await fetch(aiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -26,23 +126,28 @@ async function processTranscript(rawText) {
       const data = await res.json();
 
       if (res.ok && data.success && data.extraction) {
-        state.currentExtraction = data.extraction;
+        // Guarantee date calculation and tomorrow default if udhaar > 0
+        const ext = data.extraction;
+        if (ext.udhaarAmount > 0) {
+          const dateInfo = calculateDueDate(rawText, ext.dueDate);
+          ext.dueDate = dateInfo.dueDate;
+          ext.dueDateLabel = dateInfo.dueDateLabel;
+        } else {
+          ext.dueDate = '';
+          ext.dueDateLabel = 'Settled';
+        }
+
+        state.currentExtraction = ext;
         if (typeof renderExtractionCard === 'function') {
           renderExtractionCard();
         }
         if (typeof showToast === 'function') {
-          showToast('✨ Extracted ledger details with AI!', 'success');
+          showToast('Entry recorded successfully', 'success');
         }
         return;
-      } else {
-        if (data.error && data.error.includes('GROQ_API_KEY is not configured')) {
-          if (typeof showToast === 'function') {
-            showToast('⚠️ Groq API key not set in server/.env. Using manual rules.', 'info');
-          }
-        }
       }
     } catch (err) {
-      console.warn('AI extraction request failed, falling back to manual rules:', err);
+      console.warn('Backend extraction unavailable, using local rules:', err);
     }
   }
 
@@ -159,31 +264,15 @@ function manualRuleBasedExtraction(rawText) {
     items = "Personal Care & Cosmetics";
   }
 
-  // 4. Relative Date Calculation
-  const anchorDate = typeof TODAY_DATE !== 'undefined' ? TODAY_DATE : new Date();
-  let targetDate = new Date(anchorDate);
-  let dueDateLabel = "Not Applicable";
+  // 4. Exact Date Calculation (defaults to tomorrow if udhaar > 0 and no date spoken)
+  let formattedDueDate = null;
+  let dueDateLabel = "Settled";
 
   if (udhaarAmount > 0) {
-    if (text.includes("day after tomorrow") || text.includes("parso")) {
-      targetDate.setDate(targetDate.getDate() + 2);
-      dueDateLabel = "Day after tomorrow";
-    } else if (text.includes("tomorrow") || text.includes("kal")) {
-      targetDate.setDate(targetDate.getDate() + 1);
-      dueDateLabel = "Tomorrow";
-    } else if (text.includes("next week") || text.includes("agle hafte")) {
-      targetDate.setDate(targetDate.getDate() + 7);
-      dueDateLabel = "Next Week";
-    } else if (text.includes("sunday")) {
-      targetDate.setDate(targetDate.getDate() + 7);
-      dueDateLabel = "Upcoming Sunday";
-    } else {
-      targetDate.setDate(targetDate.getDate() + 3);
-      dueDateLabel = "In 3 Days";
-    }
+    const dateInfo = calculateDueDate(text);
+    formattedDueDate = dateInfo.dueDate;
+    dueDateLabel = dateInfo.dueDateLabel;
   }
-
-  const formattedDueDate = udhaarAmount > 0 ? targetDate.toISOString().split('T')[0] : null;
 
   // Set Extraction Result in State
   state.currentExtraction = {

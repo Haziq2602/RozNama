@@ -221,9 +221,12 @@ async function syncWithCloud() {
   if (!token || !navigator.onLine) return;
 
   try {
+    const syncUrl = window.location.protocol === 'file:' ? 'http://localhost:5000/api/ledger/sync' : '/api/ledger/sync';
+    const txUrl = window.location.protocol === 'file:' ? 'http://localhost:5000/api/ledger/transactions' : '/api/ledger/transactions';
+
     // If local transactions exist, sync them to server
     if (state.transactions.length > 0) {
-      const res = await fetch('http://localhost:5000/api/ledger/sync', {
+      const res = await fetch(syncUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -239,7 +242,7 @@ async function syncWithCloud() {
       }
     } else {
       // Otherwise, fetch whatever this logged in vendor has in the cloud
-      const res = await fetch('http://localhost:5000/api/ledger/transactions', {
+      const res = await fetch(txUrl, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.ok) {

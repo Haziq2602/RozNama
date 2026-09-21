@@ -7,9 +7,87 @@
   <meta name="description" content="Voice-note ledger web app for local vendors in India. Speak naturally in Hindi, Hinglish, or English to record daily sales, track udhaar, and collect payments.">
   <meta name="theme-color" content="#090D16">
   <link rel="stylesheet" href="style.css">
+  <script>
+    // Immediate session gatekeeper: prevents flash of dashboard for first-time visitors
+    (function() {
+      try {
+        var token = localStorage.getItem('roznama_jwt_token');
+        var guest = localStorage.getItem('roznama_guest_mode');
+        if (token || guest) {
+          document.documentElement.classList.add('has-auth-session');
+        } else {
+          document.documentElement.classList.remove('has-auth-session');
+        }
+      } catch (e) {}
+    })();
+  </script>
 </head>
 <body>
-  <div class="container">
+  <!-- Auth Landing Screen for First-Time or Logged-Out Visitors -->
+  <div id="authLandingView" class="auth-landing-view">
+    <div class="auth-landing-card">
+      <div class="auth-landing-brand">
+        <div class="auth-logo-badge">🎙️</div>
+        <h1 class="auth-brand-title">RozNama <span class="auth-brand-hindi">(रोज़नामा)</span></h1>
+        <p class="auth-brand-tagline">Smart Voice Ledger for Local Vendors & Kirana Stores</p>
+        <div class="auth-badge-pill">Bharat Voice Khata • Cloud & Offline Sync</div>
+      </div>
+
+      <div class="auth-tabs" role="tablist">
+        <button id="landingTabRegisterBtn" class="auth-tab active" type="button">Register New Store</button>
+        <button id="landingTabLoginBtn" class="auth-tab" type="button">Log In</button>
+      </div>
+
+      <!-- Registration Form (Default for first-time visitors) -->
+      <form id="landingRegisterForm" class="auth-form">
+        <div class="form-group">
+          <label for="landingRegName">Store Owner Name</label>
+          <input type="text" id="landingRegName" placeholder="e.g. Ramesh Kumar" required autocomplete="name" />
+        </div>
+        <div class="form-group">
+          <label for="landingRegStoreName">Store / Shop Name</label>
+          <input type="text" id="landingRegStoreName" placeholder="e.g. Kumar Kirana & General Store" required autocomplete="organization" />
+        </div>
+        <div class="form-group">
+          <label for="landingRegPhone">Mobile Phone Number</label>
+          <input type="tel" id="landingRegPhone" placeholder="10-digit mobile number" required pattern="[0-9]{10}" autocomplete="tel" />
+        </div>
+        <div class="form-group">
+          <label for="landingRegPassword">Create Password / PIN</label>
+          <input type="password" id="landingRegPassword" placeholder="Minimum 4 characters" required autocomplete="new-password" />
+        </div>
+        <div id="landingRegError" class="auth-error" style="display: none;"></div>
+        <button type="submit" class="auth-submit-btn">
+          Create Store Account & Enter
+        </button>
+      </form>
+
+      <!-- Login Form -->
+      <form id="landingLoginForm" class="auth-form" style="display: none;">
+        <div class="form-group">
+          <label for="landingLoginPhone">Mobile Phone Number</label>
+          <input type="tel" id="landingLoginPhone" placeholder="Registered 10-digit number" required autocomplete="tel" />
+        </div>
+        <div class="form-group">
+          <label for="landingLoginPassword">Password / PIN</label>
+          <input type="password" id="landingLoginPassword" placeholder="Enter your password / PIN" required autocomplete="current-password" />
+        </div>
+        <div id="landingLoginError" class="auth-error" style="display: none;"></div>
+        <button type="submit" class="auth-submit-btn">
+          Log In to Store Ledger
+        </button>
+      </form>
+
+      <div class="auth-guest-divider">
+        <span>or</span>
+      </div>
+      <button type="button" id="landingGuestBtn" class="btn-guest-access">
+        Continue as Guest / Offline Demo →
+      </button>
+    </div>
+  </div>
+
+  <div class="container" id="mainDashboard">
     
     <!-- Top Header -->
     <header class="app-header">
@@ -24,14 +102,8 @@
       </div>
 
       <div class="header-actions">
-        <select id="langSelect" class="lang-select" title="Select Voice & UI Language">
-          <option value="en-IN">🌐 English / Hinglish (en-IN)</option>
-          <option value="hi-IN">🇮🇳 हिन्दी (Hindi)</option>
-          <option value="mr-IN">🇮🇳 मराठी (Marathi)</option>
-          <option value="ta-IN">🇮🇳 தமிழ் (Tamil)</option>
-        </select>
-        <button class="action-btn" onclick="showToast('Khata ledger synchronized locally!', 'info')">
-          🔄 Sync Ledger
+        <button class="action-btn" onclick="showToast('Khata synchronized successfully', 'info')">
+          Sync Khata
         </button>
       </div>
     </header>
@@ -45,7 +117,7 @@
         </div>
         <div class="stat-value" id="statCashToday">₹0</div>
         <div class="stat-footer">
-          <span>🟢 Real-time Jama entries</span>
+          <span>Cash in hand</span>
         </div>
       </div>
 
@@ -56,18 +128,18 @@
         </div>
         <div class="stat-value" id="statUdhaarPending">₹0</div>
         <div class="stat-footer">
-          <span>⚠️ Outstanding balance to collect</span>
+          <span>Balance to collect</span>
         </div>
       </div>
 
       <div class="stat-card customers">
         <div class="stat-header">
-          <span>Active Customer Khatas</span>
+          <span>Active Customers</span>
           <div class="stat-icon">👥</div>
         </div>
         <div class="stat-value" id="statActiveCust">0</div>
         <div class="stat-footer">
-          <span>📱 Local vendor directory</span>
+          <span>Customer accounts</span>
         </div>
       </div>
 
@@ -78,16 +150,16 @@
         </div>
         <div class="stat-value" id="statOverdueCount">0</div>
         <div class="stat-footer">
-          <span>💬 WhatsApp reminders ready</span>
+          <span>Reminders pending</span>
         </div>
       </div>
     </section>
 
     <!-- Voice Recording Hero Section -->
     <section class="voice-hero-card">
-      <h2 class="voice-title">Speak into Mic to Log Sale or Udhaar</h2>
+      <h2 class="voice-title">Speak into Mic to Add Entry</h2>
       <p class="voice-desc">
-        Just speak naturally in Hindi or Hinglish. RozNama automatically detects customer name, cash paid, udhaar balance, purchased items, and promised due date.
+        Speak naturally. RozNama notes down customer name, cash paid, udhaar balance, items, and due date.
       </p>
 
       <div class="voice-mic-container">
@@ -95,7 +167,7 @@
           🎙️
         </button>
         <div id="recordingStatus" class="recording-status">
-          Tap microphone to record voice ledger note
+          Tap microphone and speak entry
         </div>
 
         <div class="waveform-bars">
@@ -107,15 +179,11 @@
         </div>
       </div>
 
-      <!-- Presets for Easy Demo Testing -->
-      <div class="preset-section-title">⚡ Try 1-Click Sample Voice Notes</div>
-      <div id="presetsContainer" class="presets-flex"></div>
-
       <!-- Text Fallback / Direct Editor -->
       <div class="text-fallback-wrapper">
-        <input type="text" id="transcriptInput" class="transcript-input" placeholder="Or type voice note transcript here... e.g. Ramish gave me 500 for groceries and 200 remaining day after tomorrow">
+        <input type="text" id="transcriptInput" class="transcript-input" placeholder="Or type here... e.g. Ramesh paid 500 cash and 200 udhaar for groceries">
         <button id="parseBtn" class="parse-btn">
-          ✨ Extract Ledger
+          Review Entry
         </button>
       </div>
     </section>
@@ -130,9 +198,9 @@
       <div class="panel-card">
         <div class="panel-header">
           <h3 class="panel-title">
-            <span>📋 Recent Voice Ledger Entries</span>
+            <span>Recent Khata Entries</span>
           </h3>
-          <span style="font-size:0.85rem; color:var(--text-dim);">Live Activity Log</span>
+          <span style="font-size:0.85rem; color:var(--text-dim);">Daily Transactions</span>
         </div>
 
         <div class="table-wrapper">
@@ -157,9 +225,9 @@
       <div class="panel-card">
         <div class="panel-header">
           <h3 class="panel-title">
-            <span>📒 Customer Khatas</span>
+            <span>Customer Accounts</span>
           </h3>
-          <span style="font-size:0.85rem; color:var(--text-dim);">WhatsApp Reminders</span>
+          <span style="font-size:0.85rem; color:var(--text-dim);">Pending Due Reminders</span>
         </div>
 
         <div id="customerListContainer">

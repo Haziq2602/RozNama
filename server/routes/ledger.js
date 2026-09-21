@@ -1,5 +1,5 @@
 const express = require('express');
-const { dbQuery } = require('../db');
+const { dbService } = require('../db');
 const { authenticateToken } = require('../middleware/auth');
 
 const router = express.Router();
@@ -10,10 +10,7 @@ router.use(authenticateToken);
 // Get all transactions for authenticated vendor
 router.get('/transactions', async (req, res) => {
   try {
-    const rows = await dbQuery.all(
-      `SELECT * FROM transactions WHERE user_id = ? ORDER BY timestamp DESC`,
-      [req.user.userId]
-    );
+    const rows = await dbService.getTransactions(req.user.userId);
 
     const transactions = rows.map(r => ({
       id: r.client_id || String(r.id),
@@ -23,9 +20,9 @@ router.get('/transactions', async (req, res) => {
       paidAmount: Number(r.jama_cash || 0),
       udhaarAmount: Number(r.udhaar_amount || 0),
       dueDate: r.due_date || '',
-      dueDateLabel: r.due_date || (r.udhaar_amount > 0 ? 'Pending' : 'Settled'),
+      dueDateLabel: r.due_date || (Number(r.udhaar_amount || 0) > 0 ? 'Pending' : 'Settled'),
       rawTranscript: r.raw_transcript,
-      timestamp: r.timestamp
+      timestamp: Number(r.timestamp)
     }));
 
     res.json({ transactions });
@@ -51,12 +48,17 @@ router.post('/transaction', async (req, res) => {
     const ts = timestamp || Date.now();
     const due = dueDate || dueDateLabel || '';
 
-    await dbQuery.run(
-      `INSERT OR REPLACE INTO transactions 
-        (client_id, user_id, customer_name, items, jama_cash, udhaar_amount, due_date, raw_transcript, timestamp) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [clientId, req.user.userId, customerName, itemsStr, cash, udhaar, due, rawTranscript || '', ts]
-    );
+    await dbService.upsertTransaction({
+      clientId,
+      userId: req.user.userId,
+      customerName,
+      items: itemsStr,
+      jamaCash: cash,
+      udhaarAmount: udhaar,
+      dueDate: due,
+      rawTranscript: rawTranscript || '',
+      timestamp: ts
+    });
 
     res.status(201).json({
       message: 'Transaction saved to cloud!',
@@ -93,20 +95,22 @@ router.post('/sync', async (req, res) => {
         const udhaar = Number(tx.udhaarAmount || 0);
         const due = tx.dueDate || tx.dueDateLabel || '';
 
-        await dbQuery.run(
-          `INSERT OR REPLACE INTO transactions 
-            (client_id, user_id, customer_name, items, jama_cash, udhaar_amount, due_date, raw_transcript, timestamp) 
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [clientId, req.user.userId, tx.customerName || 'Walk-in Customer', itemsStr, cash, udhaar, due, tx.rawTranscript || '', ts]
-        );
+        await dbService.upsertTransaction({
+          clientId,
+          userId: req.user.userId,
+          customerName: tx.customerName || 'Walk-in Customer',
+          items: itemsStr,
+          jamaCash: cash,
+          udhaarAmount: udhaar,
+          dueDate: due,
+          rawTranscript: tx.rawTranscript || '',
+          timestamp: ts
+        });
       }
     }
 
-    // Return combined merged transactions from server DB
-    const rows = await dbQuery.all(
-      `SELECT * FROM transactions WHERE user_id = ? ORDER BY timestamp DESC`,
-      [req.user.userId]
-    );
+    // Return combined merged transactions from cloud/local DB
+    const rows = await dbService.getTransactions(req.user.userId);
 
     const mergedTransactions = rows.map(r => ({
       id: r.client_id || String(r.id),
@@ -116,9 +120,9 @@ router.post('/sync', async (req, res) => {
       paidAmount: Number(r.jama_cash || 0),
       udhaarAmount: Number(r.udhaar_amount || 0),
       dueDate: r.due_date || '',
-      dueDateLabel: r.due_date || (r.udhaar_amount > 0 ? 'Pending' : 'Settled'),
+      dueDateLabel: r.due_date || (Number(r.udhaar_amount || 0) > 0 ? 'Pending' : 'Settled'),
       rawTranscript: r.raw_transcript,
-      timestamp: r.timestamp
+      timestamp: Number(r.timestamp)
     }));
 
     res.json({

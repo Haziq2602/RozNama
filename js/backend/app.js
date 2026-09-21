@@ -40,9 +40,4 @@ function bindEvents() {
       }
     });
   }
-
-  // Render presets
-  if (typeof renderPresets === 'function') {
-    renderPresets();
-  }
 }

@@ -36,7 +36,7 @@ async function startWhisperAudioRecording(statusEl) {
   try {
     if (statusEl) {
       statusEl.classList.add('listening');
-      statusEl.innerHTML = `<span class="pulse-dot"></span> 🎙️ Groq Whisper AI Listening (High Accuracy)... Speak now!`;
+      statusEl.innerHTML = `<span class="pulse-dot"></span> Listening... Speak now!`;
     }
 
     mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -84,11 +84,12 @@ async function sendAudioToWhisper(audioBlob) {
   const token = localStorage.getItem('roznama_jwt_token');
 
   if (statusEl) {
-    statusEl.innerHTML = `⚡ Transcribing with Groq Whisper Large v3...`;
+    statusEl.innerHTML = `Processing voice entry...`;
   }
 
   try {
-    const res = await fetch('http://localhost:5000/api/ai/transcribe', {
+    const transcribeUrl = window.location.protocol === 'file:' ? 'http://localhost:5000/api/ai/transcribe' : '/api/ai/transcribe';
+    const res = await fetch(transcribeUrl, {
       method: 'POST',
       headers: {
         'Content-Type': audioBlob.type || 'audio/webm',
@@ -102,15 +103,15 @@ async function sendAudioToWhisper(audioBlob) {
     if (res.ok && data.success && data.text) {
       if (inputEl) inputEl.value = data.text;
       if (typeof showToast === 'function') {
-        showToast(`🎙️ Whisper Transcribed: "${data.text}"`, 'info');
+        showToast(`Recorded: "${data.text}"`, 'info');
       }
       if (typeof processTranscript === 'function') {
         processTranscript(data.text);
       }
     } else {
-      console.warn('Whisper transcription unavailable, fallback to manual input or check error:', data);
+      console.warn('Voice transcription unavailable, fallback to manual input or check error:', data);
       if (data.error && typeof showToast === 'function') {
-        showToast('⚠️ Whisper AI unavailable, check Groq API key or try offline mic', 'info');
+        showToast('Voice recognition unavailable, please type or try again', 'info');
       }
     }
 
@@ -122,7 +123,7 @@ async function sendAudioToWhisper(audioBlob) {
   } finally {
     if (statusEl) {
       statusEl.classList.remove('listening');
-      statusEl.innerHTML = `Tap microphone to record voice ledger note`;
+      statusEl.innerHTML = `Tap microphone and speak entry`;
     }
   }
 }
@@ -131,7 +132,7 @@ async function sendAudioToWhisper(audioBlob) {
 function startBrowserSpeechRecording(statusEl) {
   if (statusEl) {
     statusEl.classList.add('listening');
-    statusEl.innerHTML = `<span class="pulse-dot"></span> 🌐 Offline Mode (Browser Mic Listening in ${state.selectedLang})... Speak now!`;
+    statusEl.innerHTML = `<span class="pulse-dot"></span> Listening... Speak now!`;
   }
 
   if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
@@ -186,7 +187,7 @@ function stopRecording() {
   if (micBtn) micBtn.classList.remove('recording');
   if (statusEl) {
     statusEl.classList.remove('listening');
-    statusEl.innerHTML = `Tap microphone to record voice ledger note`;
+    statusEl.innerHTML = `Tap microphone and speak entry`;
   }
 
   // Stop MediaRecorder if active

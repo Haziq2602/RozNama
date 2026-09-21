@@ -61,7 +61,7 @@ function confirmTransaction() {
   }
 
   if (typeof showToast === 'function') {
-    showToast(`Saved transaction for ${ext.customerName}!`, 'success');
+    showToast(`Saved entry for ${ext.customerName}!`, 'success');
   }
 
   // Reset Input & Extraction Container
@@ -77,10 +77,37 @@ function confirmTransaction() {
 
 // Update field in current draft extraction
 function updateExtField(key, value) {
-  if (state.currentExtraction) {
-    state.currentExtraction[key] = value;
-    if (typeof showToast === 'function') {
-      showToast(`Updated ${key}: ${value}`, 'info');
+  if (!state.currentExtraction) return;
+  state.currentExtraction[key] = value;
+
+  if (key === 'dueDate') {
+    if (value) {
+      try {
+        const d = new Date(value + 'T00:00:00');
+        state.currentExtraction.dueDateLabel = d.toLocaleDateString('en-IN', {
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric'
+        });
+      } catch (e) {
+        state.currentExtraction.dueDateLabel = value;
+      }
+    } else {
+      state.currentExtraction.dueDateLabel = 'Pending';
+    }
+  } else if (key === 'udhaarAmount') {
+    const num = parseInt(value, 10) || 0;
+    state.currentExtraction.udhaarAmount = num;
+    if (num > 0 && !state.currentExtraction.dueDate) {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const ymd = tomorrow.toISOString().split('T')[0];
+      state.currentExtraction.dueDate = ymd;
+      state.currentExtraction.dueDateLabel = 'Tomorrow (Default)';
+    }
+    // Re-render extraction card so due date field appears/disappears accordingly
+    if (typeof renderExtractionCard === 'function') {
+      renderExtractionCard();
     }
   }
 }
@@ -91,6 +118,6 @@ function discardExtraction() {
   const container = document.getElementById('extractionContainer');
   if (container) container.style.display = 'none';
   if (typeof showToast === 'function') {
-    showToast("Parsed voice note discarded", "info");
+    showToast("Entry discarded", "info");
   }
 }
