@@ -45,16 +45,41 @@ function openDB() {
   });
 }
 
-// Dynamically compute customer balances from transactions
+// Helper to identify if a transaction is an udhaar settlement / clear due repayment
+function isSettlementTransaction(tx) {
+  if (!tx) return false;
+  if (tx.isSettlement === true || tx.type === 'settlement' || (tx.settledAmount && tx.settledAmount > 0)) {
+    return true;
+  }
+  const items = String(tx.items || '').toLowerCase();
+  const raw = String(tx.rawTranscript || tx.transcript || '').toLowerCase();
+  if (items.includes('settlement') || items.includes('clear due') || items.includes('cleared due') || items.includes('udhaar chukta')) {
+    return true;
+  }
+  if (raw.includes('clear udhaar') || raw.includes('cleared udhaar') || raw.includes('chukta') || raw.includes('settle')) {
+    return true;
+  }
+  return false;
+}
+
+// Dynamically compute customer balances from transactions (Single Source of Truth)
 function recalculateCustomers() {
   const custMap = new Map();
 
-  for (const tx of state.transactions) {
+  // Sort transactions chronologically (oldest to newest) to replay credits and debt clearances accurately
+  const sortedTxs = [...state.transactions].sort((a, b) => {
+    const timeA = Number(a.timestamp) || 0;
+    const timeB = Number(b.timestamp) || 0;
+    return timeA - timeB;
+  });
+
+  const savedPhones = JSON.parse(localStorage.getItem('roznama_cust_phones') || '{}');
+
+  for (const tx of sortedTxs) {
     const rawName = (tx.customerName || 'Walk-in').trim();
     if (!rawName) continue;
     const key = rawName.toLowerCase();
 
-    const savedPhones = JSON.parse(localStorage.getItem('roznama_cust_phones') || '{}');
     if (!custMap.has(key)) {
       custMap.set(key, {
         id: tx.customerId || `cust-${key.replace(/[^a-z0-9]/gi, '_')}`,
@@ -62,6 +87,8 @@ function recalculateCustomers() {
         phone: savedPhones[key] || tx.customerPhone || '',
         totalJama: 0,
         totalUdhaar: 0,
+        dueDate: '',
+        dueDateLabel: 'Settled',
         lastTransaction: typeof tx.timestamp === 'number' 
           ? new Date(tx.timestamp).toISOString().split('T')[0] 
           : (String(tx.timestamp || '').split(' ')[0] || new Date().toISOString().split('T')[0]),
@@ -71,10 +98,46 @@ function recalculateCustomers() {
     }
 
     const c = custMap.get(key);
-    c.totalJama += Number(tx.jamaCash || tx.paidAmount || 0);
-    c.totalUdhaar += Number(tx.udhaarAmount || 0);
-    if (c.totalUdhaar > 0) {
-      c.status = "pending";
+
+    // Keep phone up-to-date if present
+    if (!c.phone && (savedPhones[key] || tx.customerPhone)) {
+      c.phone = savedPhones[key] || tx.customerPhone || '';
+    }
+
+    // Update lastTransaction with newest transaction date
+    const txDate = typeof tx.timestamp === 'number' 
+      ? new Date(tx.timestamp).toISOString().split('T')[0] 
+      : (String(tx.timestamp || '').split(' ')[0] || '');
+    if (txDate) {
+      c.lastTransaction = txDate;
+    }
+
+    const cash = Number(tx.jamaCash !== undefined ? tx.jamaCash : (tx.paidAmount || 0));
+    c.totalJama += cash;
+
+    const isSettlement = isSettlementTransaction(tx);
+
+    if (isSettlement) {
+      // Debt clearance: reduce outstanding udhaar
+      const settled = Number(tx.settledAmount || cash);
+      c.totalUdhaar = Math.max(0, c.totalUdhaar - settled);
+      if (c.totalUdhaar === 0) {
+        c.status = "settled";
+        c.dueDate = '';
+        c.dueDateLabel = 'Settled';
+      }
+    } else {
+      // Normal purchase entry: add any new udhaar
+      const newUdhaar = Number(tx.udhaarAmount || 0);
+      c.totalUdhaar += newUdhaar;
+
+      if (newUdhaar > 0) {
+        c.status = "pending";
+        if (tx.dueDate) {
+          c.dueDate = tx.dueDate;
+          c.dueDateLabel = tx.dueDateLabel || tx.dueDate;
+        }
+      }
     }
   }
 

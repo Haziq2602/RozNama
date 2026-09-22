@@ -47,6 +47,9 @@ function confirmTransaction() {
   };
 
   state.transactions.unshift(newTx);
+  if (typeof recalculateCustomers === 'function') {
+    recalculateCustomers();
+  }
   saveState();
   if (typeof saveTransactionOffline === 'function') {
     saveTransactionOffline(newTx);

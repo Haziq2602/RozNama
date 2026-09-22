@@ -12,18 +12,26 @@ router.get('/transactions', async (req, res) => {
   try {
     const rows = await dbService.getTransactions(req.user.userId);
 
-    const transactions = rows.map(r => ({
-      id: r.client_id || String(r.id),
-      customerName: r.customer_name,
-      items: r.items || 'General Items',
-      jamaCash: Number(r.jama_cash || 0),
-      paidAmount: Number(r.jama_cash || 0),
-      udhaarAmount: Number(r.udhaar_amount || 0),
-      dueDate: r.due_date || '',
-      dueDateLabel: r.due_date || (Number(r.udhaar_amount || 0) > 0 ? 'Pending' : 'Settled'),
-      rawTranscript: r.raw_transcript,
-      timestamp: Number(r.timestamp)
-    }));
+    const transactions = rows.map(r => {
+      const isSettlement = (r.items && (r.items.toLowerCase().includes('settlement') || r.items.toLowerCase().includes('clear due'))) ||
+                           (r.raw_transcript && (r.raw_transcript.toLowerCase().includes('clear udhaar') || r.raw_transcript.toLowerCase().includes('chukta')));
+      return {
+        id: r.client_id || String(r.id),
+        customerName: r.customer_name,
+        items: r.items || 'General Items',
+        type: isSettlement ? 'settlement' : (Number(r.udhaar_amount || 0) > 0 ? 'credit_debit' : 'paid'),
+        isSettlement: isSettlement,
+        settledAmount: isSettlement ? Number(r.jama_cash || 0) : 0,
+        jamaCash: Number(r.jama_cash || 0),
+        paidAmount: Number(r.jama_cash || 0),
+        udhaarAmount: Number(r.udhaar_amount || 0),
+        dueDate: r.due_date || '',
+        dueDateLabel: r.due_date || (Number(r.udhaar_amount || 0) > 0 ? 'Pending' : 'Settled'),
+        rawTranscript: r.raw_transcript,
+        transcript: r.raw_transcript,
+        timestamp: Number(r.timestamp)
+      };
+    });
 
     res.json({ transactions });
   } catch (err) {
@@ -35,7 +43,7 @@ router.get('/transactions', async (req, res) => {
 // Create single transaction
 router.post('/transaction', async (req, res) => {
   try {
-    const { id, customerName, items, jamaCash, paidAmount, udhaarAmount, dueDate, dueDateLabel, rawTranscript, timestamp } = req.body;
+    const { id, customerName, items, jamaCash, paidAmount, udhaarAmount, dueDate, dueDateLabel, rawTranscript, transcript, timestamp } = req.body;
 
     if (!customerName) {
       return res.status(400).json({ error: 'Customer name is required.' });
@@ -47,6 +55,7 @@ router.post('/transaction', async (req, res) => {
     const udhaar = Number(udhaarAmount || 0);
     const ts = timestamp || Date.now();
     const due = dueDate || dueDateLabel || '';
+    const raw = rawTranscript || transcript || '';
 
     await dbService.upsertTransaction({
       clientId,
@@ -56,7 +65,7 @@ router.post('/transaction', async (req, res) => {
       jamaCash: cash,
       udhaarAmount: udhaar,
       dueDate: due,
-      rawTranscript: rawTranscript || '',
+      rawTranscript: raw,
       timestamp: ts
     });
 
@@ -71,7 +80,8 @@ router.post('/transaction', async (req, res) => {
         udhaarAmount: udhaar,
         dueDate: due,
         dueDateLabel: due || (udhaar > 0 ? 'Pending' : 'Settled'),
-        rawTranscript: rawTranscript || '',
+        rawTranscript: raw,
+        transcript: raw,
       }
     });
 
@@ -94,6 +104,7 @@ router.post('/sync', async (req, res) => {
         const cash = tx.jamaCash !== undefined ? Number(tx.jamaCash) : Number(tx.paidAmount || 0);
         const udhaar = Number(tx.udhaarAmount || 0);
         const due = tx.dueDate || tx.dueDateLabel || '';
+        const raw = tx.rawTranscript || tx.transcript || '';
 
         await dbService.upsertTransaction({
           clientId,
@@ -103,7 +114,7 @@ router.post('/sync', async (req, res) => {
           jamaCash: cash,
           udhaarAmount: udhaar,
           dueDate: due,
-          rawTranscript: tx.rawTranscript || '',
+          rawTranscript: raw,
           timestamp: ts
         });
       }
@@ -112,18 +123,26 @@ router.post('/sync', async (req, res) => {
     // Return combined merged transactions from cloud/local DB
     const rows = await dbService.getTransactions(req.user.userId);
 
-    const mergedTransactions = rows.map(r => ({
-      id: r.client_id || String(r.id),
-      customerName: r.customer_name,
-      items: r.items || 'General Items',
-      jamaCash: Number(r.jama_cash || 0),
-      paidAmount: Number(r.jama_cash || 0),
-      udhaarAmount: Number(r.udhaar_amount || 0),
-      dueDate: r.due_date || '',
-      dueDateLabel: r.due_date || (Number(r.udhaar_amount || 0) > 0 ? 'Pending' : 'Settled'),
-      rawTranscript: r.raw_transcript,
-      timestamp: Number(r.timestamp)
-    }));
+    const mergedTransactions = rows.map(r => {
+      const isSettlement = (r.items && (r.items.toLowerCase().includes('settlement') || r.items.toLowerCase().includes('clear due'))) ||
+                           (r.raw_transcript && (r.raw_transcript.toLowerCase().includes('clear udhaar') || r.raw_transcript.toLowerCase().includes('chukta')));
+      return {
+        id: r.client_id || String(r.id),
+        customerName: r.customer_name,
+        items: r.items || 'General Items',
+        type: isSettlement ? 'settlement' : (Number(r.udhaar_amount || 0) > 0 ? 'credit_debit' : 'paid'),
+        isSettlement: isSettlement,
+        settledAmount: isSettlement ? Number(r.jama_cash || 0) : 0,
+        jamaCash: Number(r.jama_cash || 0),
+        paidAmount: Number(r.jama_cash || 0),
+        udhaarAmount: Number(r.udhaar_amount || 0),
+        dueDate: r.due_date || '',
+        dueDateLabel: r.due_date || (Number(r.udhaar_amount || 0) > 0 ? 'Pending' : 'Settled'),
+        rawTranscript: r.raw_transcript,
+        transcript: r.raw_transcript,
+        timestamp: Number(r.timestamp)
+      };
+    });
 
     res.json({
       message: 'Cloud sync successful!',

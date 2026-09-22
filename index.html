@@ -108,101 +108,186 @@
       </div>
     </header>
 
-    <!-- Overview Stats Row -->
-    <section class="stats-grid">
-      <div class="stat-card cash">
-        <div class="stat-header">
-          <span>Today's Cash Collected</span>
-          <div class="stat-icon">💵</div>
-        </div>
-        <div class="stat-value" id="statCashToday">₹0</div>
-        <div class="stat-footer">
-          <span>Cash in hand</span>
-        </div>
-      </div>
-
-      <div class="stat-card udhaar">
-        <div class="stat-header">
-          <span>Total Udhaar (Pending Credit)</span>
-          <div class="stat-icon">📜</div>
-        </div>
-        <div class="stat-value" id="statUdhaarPending">₹0</div>
-        <div class="stat-footer">
-          <span>Balance to collect</span>
-        </div>
-      </div>
-
-      <div class="stat-card customers">
-        <div class="stat-header">
-          <span>Active Customers</span>
-          <div class="stat-icon">👥</div>
-        </div>
-        <div class="stat-value" id="statActiveCust">0</div>
-        <div class="stat-footer">
-          <span>Customer accounts</span>
-        </div>
-      </div>
-
-      <div class="stat-card reminders">
-        <div class="stat-header">
-          <span>Payment Reminders Due</span>
-          <div class="stat-icon">🔔</div>
-        </div>
-        <div class="stat-value" id="statOverdueCount">0</div>
-        <div class="stat-footer">
-          <span>Reminders pending</span>
-        </div>
-      </div>
-    </section>
-
-    <!-- Voice Recording Hero Section -->
-    <section class="voice-hero-card">
-      <h2 class="voice-title">Speak into Mic to Add Entry</h2>
-      <p class="voice-desc">
-        Speak naturally. RozNama notes down customer name, cash paid, udhaar balance, items, and due date.
-      </p>
-
-      <div class="voice-mic-container">
-        <button id="micBtn" class="mic-button" title="Tap to Speak">
-          🎙️
-        </button>
-        <div id="recordingStatus" class="recording-status">
-          Tap microphone and speak entry
+    <!-- View 1: 🏠 Home (Voice & Daily Overview) -->
+    <div id="viewHome" class="app-view active">
+      <!-- Overview Stats Row -->
+      <section class="stats-grid">
+        <div class="stat-card cash">
+          <div class="stat-header">
+            <span>Today's Cash Collected</span>
+            <div class="stat-icon">💵</div>
+          </div>
+          <div class="stat-value" id="statCashToday">₹0</div>
+          <div class="stat-footer">
+            <span>Cash in hand</span>
+          </div>
         </div>
 
-        <div class="waveform-bars">
-          <div class="bar"></div>
-          <div class="bar"></div>
-          <div class="bar"></div>
-          <div class="bar"></div>
-          <div class="bar"></div>
+        <div class="stat-card udhaar">
+          <div class="stat-header">
+            <span>Total Udhaar (Pending Credit)</span>
+            <div class="stat-icon">📜</div>
+          </div>
+          <div class="stat-value" id="statUdhaarPending">₹0</div>
+          <div class="stat-footer">
+            <span>Balance to collect</span>
+          </div>
         </div>
-      </div>
 
-      <!-- Text Fallback / Direct Editor -->
-      <div class="text-fallback-wrapper">
-        <input type="text" id="transcriptInput" class="transcript-input" placeholder="Or type here... e.g. Ramesh paid 500 cash and 200 udhaar for groceries">
-        <button id="parseBtn" class="parse-btn">
-          Review Entry
-        </button>
-      </div>
-    </section>
+        <div class="stat-card customers">
+          <div class="stat-header">
+            <span>Active Customers</span>
+            <div class="stat-icon">👥</div>
+          </div>
+          <div class="stat-value" id="statActiveCust">0</div>
+          <div class="stat-footer">
+            <span>Customer accounts</span>
+          </div>
+        </div>
 
-    <!-- Extracted Entity Preview Card -->
-    <div id="extractionContainer" style="display: none;"></div>
+        <div class="stat-card reminders">
+          <div class="stat-header">
+            <span>Payment Reminders Due</span>
+            <div class="stat-icon">🔔</div>
+          </div>
+          <div class="stat-value" id="statOverdueCount">0</div>
+          <div class="stat-footer">
+            <span>Reminders pending</span>
+          </div>
+        </div>
+      </section>
 
-    <!-- Main Content Panels -->
-    <div class="section-grid">
-      
-      <!-- Recent Transactions Table -->
-      <div class="panel-card">
-        <div class="panel-header">
+      <!-- Voice Recording Hero Section -->
+      <section class="voice-hero-card">
+        <h2 class="voice-title">Speak into Mic to Add Entry</h2>
+        <p class="voice-desc">
+          Speak naturally. RozNama notes down customer name, cash paid, udhaar balance, items, and due date.
+        </p>
+
+        <div class="voice-mic-container">
+          <button id="micBtn" class="mic-button" title="Tap to Speak">
+            🎙️
+          </button>
+          <div id="recordingStatus" class="recording-status">
+            Tap microphone and speak entry
+          </div>
+
+          <div class="waveform-bars">
+            <div class="bar"></div>
+            <div class="bar"></div>
+            <div class="bar"></div>
+            <div class="bar"></div>
+            <div class="bar"></div>
+          </div>
+        </div>
+
+        <!-- Text Fallback / Direct Editor -->
+        <div class="text-fallback-wrapper">
+          <input type="text" id="transcriptInput" class="transcript-input" placeholder="Or type here... e.g. Ramesh paid 500 cash and 200 udhaar for groceries">
+          <button id="parseBtn" class="parse-btn">
+            Review Entry
+          </button>
+        </div>
+      </section>
+
+      <!-- Extracted Entity Preview Card -->
+      <div id="extractionContainer" style="display: none;"></div>
+
+      <!-- Quick Recent Khata Snippet -->
+      <div class="panel-card" style="margin-top: 1.5rem;">
+        <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center;">
           <h3 class="panel-title">
-            <span>Recent Khata Entries</span>
+            <span>Today's Recent Activity</span>
           </h3>
-          <span style="font-size:0.85rem; color:var(--text-dim);">Daily Transactions</span>
+          <button type="button" class="btn-link-action" onclick="switchAppView('history')" title="View full ledger">
+            View All in History →
+          </button>
         </div>
+        <div class="table-wrapper">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                <th>Customer & Time</th>
+                <th>Items Purchased</th>
+                <th>Cash (Jama)</th>
+                <th>Udhaar (Credit)</th>
+                <th>Due Date</th>
+              </tr>
+            </thead>
+            <tbody id="homeRecentTxBody">
+              <!-- Populated by ui.js -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
 
+    <!-- View 2: 👥 Customer Khata Directory -->
+    <div id="viewCustomers" class="app-view">
+      <div class="khata-directory-header">
+        <div>
+          <h2 class="section-heading">Customer Khata Directory</h2>
+          <p class="section-subheading">Track customer credit, promises, and send WhatsApp payment reminders</p>
+        </div>
+        <div class="khata-quick-stats">
+          <div class="khata-stat-pill">
+            <span>Total Credit:</span> <strong id="dirTotalCredit">₹0</strong>
+          </div>
+        </div>
+      </div>
+
+      <!-- Search & Filters Toolbar -->
+      <div class="directory-toolbar">
+        <div class="search-box-wrapper">
+          <input type="text" id="custSearchInput" class="cust-search-input" placeholder="🔍 Search customer by name or phone..." oninput="onCustomerSearchInput(this.value)">
+        </div>
+        <div class="sort-select-wrapper">
+          <label for="custSortSelect" style="font-size:0.75rem; color:var(--text-dim); text-transform:uppercase; font-weight:700;">Sort By:</label>
+          <select id="custSortSelect" class="cust-sort-select" onchange="onCustomerSortChange(this.value)">
+            <option value="highest_udhaar">₹ Highest Udhaar First</option>
+            <option value="nearest_due">📅 Nearest Due Date</option>
+            <option value="lowest_udhaar">₹ Lowest Udhaar First</option>
+            <option value="name_asc">🔤 Alphabetical (A-Z)</option>
+            <option value="recently_active">⚡ Recently Active</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Status Filter Chips -->
+      <div class="filter-chips-row">
+        <button type="button" class="filter-chip active" id="chipFilterAll" onclick="setCustomerStatusFilter('all')">
+          All Accounts (<span id="countFilterAll">0</span>)
+        </button>
+        <button type="button" class="filter-chip" id="chipFilterPending" onclick="setCustomerStatusFilter('pending')">
+          Pending Udhaar (<span id="countFilterPending">0</span>)
+        </button>
+        <button type="button" class="filter-chip" id="chipFilterDue" onclick="setCustomerStatusFilter('due')">
+          Due Today / Overdue (<span id="countFilterDue">0</span>)
+        </button>
+        <button type="button" class="filter-chip" id="chipFilterSettled" onclick="setCustomerStatusFilter('settled')">
+          Settled / Nil (<span id="countFilterSettled">0</span>)
+        </button>
+      </div>
+
+      <!-- Customer Cards List -->
+      <div id="fullCustomerDirectory" class="customer-directory-grid">
+        <!-- Rendered dynamically by ui.js -->
+      </div>
+    </div>
+
+    <!-- View 3: 📜 Full Transactions History -->
+    <div id="viewHistory" class="app-view">
+      <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 1rem;">
+        <div>
+          <h2 class="section-heading">Complete Transaction Ledger</h2>
+          <p class="section-subheading">All daily voice and manual khata entries with itemized breakdowns</p>
+        </div>
+        <div class="history-actions">
+          <input type="text" id="txSearchInput" class="cust-search-input" style="max-width:240px; padding:6px 12px; font-size:0.82rem;" placeholder="Filter by customer or item..." oninput="onTxSearchInput(this.value)">
+        </div>
+      </div>
+
+      <div class="panel-card">
         <div class="table-wrapper">
           <table class="ledger-table">
             <thead>
@@ -220,22 +305,133 @@
           </table>
         </div>
       </div>
+    </div>
 
-      <!-- Customer Khata Directory & WhatsApp Reminders -->
-      <div class="panel-card">
-        <div class="panel-header">
-          <h3 class="panel-title">
-            <span>Customer Accounts</span>
-          </h3>
-          <span style="font-size:0.85rem; color:var(--text-dim);">Pending Due Reminders</span>
-        </div>
-
-        <div id="customerListContainer">
-          <!-- Populated by app.js -->
-        </div>
+    <!-- View 4: 👤 Store Profile & Settings Hub -->
+    <div id="viewSettings" class="app-view">
+      <div style="margin-bottom: 1.5rem;">
+        <h2 class="section-heading">Store Profile & Settings</h2>
+        <p class="section-subheading">Manage store identity, UPI QR codes, cloud sync, and account access</p>
       </div>
 
+      <div class="settings-grid">
+        <!-- Store Identity Card -->
+        <div class="panel-card">
+          <div class="panel-header">
+            <h3 class="panel-title">🏪 Store Identity</h3>
+          </div>
+          <form id="settingsProfileForm" class="auth-form" onsubmit="saveStoreProfileSettings(event)">
+            <div class="form-group">
+              <label for="settingsStoreNameInput">Store / Shop Name</label>
+              <input type="text" id="settingsStoreNameInput" placeholder="e.g. Gupta General Store" required>
+            </div>
+            <div class="form-group">
+              <label for="settingsOwnerNameInput">Store Owner Name</label>
+              <input type="text" id="settingsOwnerNameInput" placeholder="e.g. Ramesh Gupta" required>
+            </div>
+            <div class="form-group">
+              <label for="settingsOwnerPhone">Registered Phone Number</label>
+              <input type="tel" id="settingsOwnerPhone" disabled style="opacity: 0.7; cursor: not-allowed;">
+            </div>
+            <button type="submit" class="auth-submit-btn" style="margin-top: 0.5rem;">
+              Save Store Profile
+            </button>
+          </form>
+        </div>
+
+        <!-- Store UPI Payment Hub Card -->
+        <div class="panel-card">
+          <div class="panel-header">
+            <h3 class="panel-title">💳 Store UPI & Dynamic QR</h3>
+          </div>
+          <div style="margin-bottom: 1rem;">
+            <label style="display:block; font-size:0.8rem; font-weight:600; color:var(--text-dim); margin-bottom:0.35rem;">
+              Store UPI ID (VPA)
+            </label>
+            <div style="display:flex; gap:0.5rem;">
+              <input type="text" id="settingsUpiInput" class="transcript-input" placeholder="e.g. 9876543210@upi or store@okhdfcbank" style="font-size:0.92rem;">
+              <button type="button" class="btn-confirm" style="white-space:nowrap; padding:0 1rem;" onclick="saveStoreUpiSettings()">
+                Save UPI
+              </button>
+            </div>
+            <div style="display:flex; gap:0.35rem; flex-wrap:wrap; margin-top:0.6rem;">
+              <span style="font-size:0.72rem; color:var(--text-dim); align-self:center;">Quick Handles:</span>
+              <button type="button" class="template-chip" style="padding:3px 8px; font-size:0.72rem;" onclick="appendSettingsUpiSuffix('@upi')">@upi</button>
+              <button type="button" class="template-chip" style="padding:3px 8px; font-size:0.72rem;" onclick="appendSettingsUpiSuffix('@okhdfcbank')">@okhdfcbank</button>
+              <button type="button" class="template-chip" style="padding:3px 8px; font-size:0.72rem;" onclick="appendSettingsUpiSuffix('@okaxis')">@okaxis</button>
+              <button type="button" class="template-chip" style="padding:3px 8px; font-size:0.72rem;" onclick="appendSettingsUpiSuffix('@paytm')">@paytm</button>
+              <button type="button" class="template-chip" style="padding:3px 8px; font-size:0.72rem;" onclick="appendSettingsUpiSuffix('@ybl')">@ybl</button>
+            </div>
+          </div>
+
+          <!-- Counter Live Scannable QR -->
+          <div class="qr-container" style="background:#0E1522; border:1px solid var(--border-color); border-radius:10px; padding:1rem; text-align:center;">
+            <div style="font-size:0.82rem; font-weight:700; color:#FFF; margin-bottom:0.5rem;">Counter UPI Standee QR</div>
+            <div class="qr-canvas-box" style="display:inline-block; background:#FFF; padding:6px; border-radius:8px;">
+              <canvas id="settingsStoreQrCanvas"></canvas>
+            </div>
+            <div style="font-size:0.72rem; color:var(--text-dim); margin-top:0.35rem;">
+              Show this QR code at your shop counter for instant customer payments
+            </div>
+          </div>
+        </div>
+
+        <!-- Cloud Database & Diagnostics -->
+        <div class="panel-card">
+          <div class="panel-header">
+            <h3 class="panel-title">☁️ Cloud Sync & Data Backup</h3>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:0.85rem;">
+            <div style="background:#0E1522; border:1px solid var(--border-color); border-radius:8px; padding:0.75rem 1rem; display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <div style="font-size:0.85rem; font-weight:700; color:#FFF;">Cloud Database Status</div>
+                <div style="font-size:0.75rem; color:var(--text-dim);">Supabase Cloud PostgreSQL</div>
+              </div>
+              <span id="settingsCloudBadge" style="background:#059669; color:#FFF; font-size:0.72rem; font-weight:700; padding:3px 8px; border-radius:12px;">Active</span>
+            </div>
+
+            <div style="display:flex; gap:0.75rem;">
+              <button type="button" class="action-btn" style="flex:1; padding:0.75rem;" onclick="syncWithCloud()">
+                🔄 Sync All Khata Entries
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Account Sign Out -->
+        <div class="panel-card" style="border-color: rgba(220, 38, 38, 0.3);">
+          <div class="panel-header">
+            <h3 class="panel-title" style="color: #EF4444;">🚪 Account Access</h3>
+          </div>
+          <p style="font-size:0.82rem; color:var(--text-dim); margin-bottom:1rem;">
+            Log out of your store account on this device. Your data remains safely encrypted on Supabase cloud.
+          </p>
+          <button type="button" class="btn-discard" style="width:100%; min-height:44px; font-weight:700;" onclick="handleLogout()">
+            Log Out of Store
+          </button>
+        </div>
+      </div>
     </div>
+
+    <!-- Floating Bottom Navigation Island (iOS Design System) -->
+    <nav class="floating-nav-island" id="floatingNavIsland">
+      <button type="button" class="floating-nav-tab active" id="tabBtnHome" onclick="switchAppView('home')" title="Daily Voice Ledger">
+        <div class="nav-icon-circle">🏠</div>
+        <span class="nav-tab-label">Home</span>
+      </button>
+      <button type="button" class="floating-nav-tab" id="tabBtnCustomers" onclick="switchAppView('customers')" title="Customer Khata Directory">
+        <div class="nav-icon-circle">👥</div>
+        <span class="nav-tab-label">Khata</span>
+      </button>
+      <button type="button" class="floating-nav-tab" id="tabBtnHistory" onclick="switchAppView('history')" title="Transaction History">
+        <div class="nav-icon-circle">📜</div>
+        <span class="nav-tab-label">History</span>
+      </button>
+      <button type="button" class="floating-nav-tab" id="tabBtnSettings" onclick="switchAppView('settings')" title="Store Profile & UPI">
+        <div class="nav-icon-circle">👤</div>
+        <span class="nav-tab-label">Store</span>
+      </button>
+    </nav>
 
   </div>
 
@@ -245,6 +441,7 @@
   <!-- JavaScript Modules -->
   <script src="js/backend/demo-data.js"></script>
   <script src="js/backend/store.js"></script>
+  <script src="js/frontend/qrcode.min.js"></script>
   <script src="js/frontend/ui.js"></script>
   <script src="js/frontend/auth.js"></script>
   <script src="js/backend/parser.js"></script>

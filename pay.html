@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover">
+  <title>Pay via UPI - RozNama Store Settlement</title>
+  <meta name="description" content="Instant 1-Tap UPI payment gateway for local store ledger clearance.">
+  <meta name="theme-color" content="#090D16">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    body {
+      min-height: 100vh;
+      min-height: 100dvh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.25rem 1rem;
+      background-color: var(--bg-main, #0b0f19);
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      color: #F8FAFC;
+    }
+
+    .pay-card {
+      background-color: #151D2C;
+      border: 1px solid #263347;
+      border-radius: 16px;
+      width: 100%;
+      max-width: 440px;
+      padding: 2rem 1.5rem;
+      text-align: center;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+      animation: slideUpPay 0.25s ease-out;
+    }
+
+    @keyframes slideUpPay {
+      from { opacity: 0; transform: translateY(16px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .pay-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      background: #0E1522;
+      border: 1px solid #263347;
+      color: #38BDF8;
+      font-size: 0.76rem;
+      font-weight: 600;
+      padding: 4px 12px;
+      border-radius: 20px;
+      margin-bottom: 1.25rem;
+    }
+
+    .pay-store-name {
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: #FFFFFF;
+      margin-bottom: 0.25rem;
+      letter-spacing: -0.01em;
+    }
+
+    .pay-subtitle {
+      font-size: 0.82rem;
+      color: #94A3B8;
+      margin-bottom: 1.5rem;
+    }
+
+    .pay-amount-box {
+      background: #0E1522;
+      border: 1px solid #263347;
+      border-radius: 12px;
+      padding: 1.25rem 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .pay-amount-label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      font-weight: 700;
+      color: #94A3B8;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.35rem;
+    }
+
+    .pay-amount-value {
+      font-size: 2.2rem;
+      font-weight: 800;
+      color: #10B981;
+      letter-spacing: -0.02em;
+    }
+
+    .pay-vpa-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: #1E293B;
+      border: 1px solid #334155;
+      color: #E2E8F0;
+      font-size: 0.85rem;
+      font-weight: 600;
+      padding: 6px 14px;
+      border-radius: 8px;
+      margin-top: 0.75rem;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .pay-vpa-pill:hover {
+      background: #273549;
+    }
+
+    .btn-main-pay {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      width: 100%;
+      background: #16A34A;
+      border: 1px solid #15803D;
+      color: #FFFFFF;
+      font-size: 1.05rem;
+      font-weight: 700;
+      padding: 0.95rem 1.25rem;
+      border-radius: 10px;
+      text-decoration: none;
+      cursor: pointer;
+      margin-bottom: 1rem;
+      box-shadow: 0 4px 14px rgba(22, 163, 74, 0.4);
+      transition: background 0.15s, transform 0.1s;
+    }
+
+    .btn-main-pay:hover {
+      background: #15803D;
+    }
+
+    .btn-main-pay:active {
+      transform: scale(0.98);
+    }
+
+    .app-choices-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .btn-app-choice {
+      background: #0E1522;
+      border: 1px solid #263347;
+      color: #CBD5E1;
+      padding: 8px 6px;
+      border-radius: 8px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      text-decoration: none;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.25rem;
+      transition: background 0.15s, border-color 0.15s;
+    }
+
+    .btn-app-choice:hover {
+      background: #1E293B;
+      border-color: #38BDF8;
+      color: #FFFFFF;
+    }
+
+    .qr-container {
+      background: #0E1522;
+      border: 1px solid #263347;
+      border-radius: 12px;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-top: 1rem;
+    }
+
+    .qr-canvas-box {
+      background: #FFFFFF;
+      padding: 6px;
+      border-radius: 8px;
+      margin-bottom: 0.5rem;
+    }
+
+    #qrCanvas {
+      width: 130px;
+      height: 130px;
+      display: block;
+    }
+
+    .qr-label {
+      font-size: 0.75rem;
+      color: #94A3B8;
+    }
+
+    .footer-security {
+      font-size: 0.72rem;
+      color: #64748B;
+      margin-top: 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.35rem;
+    }
+  </style>
+  <script src="js/frontend/qrcode.min.js"></script>
+</head>
+<body>
+
+  <div class="pay-card">
+    <div class="pay-badge">
+      <span>🛡️</span> Verified Direct Bank UPI
+    </div>
+
+    <div class="pay-store-name" id="displayStoreName">Kirana Store</div>
+    <div class="pay-subtitle">RozNama Voice Khata Settlement</div>
+
+    <div class="pay-amount-box">
+      <div class="pay-amount-label">Pending Balance to Clear</div>
+      <div class="pay-amount-value" id="displayAmount">₹0.00</div>
+      
+      <div>
+        <div class="pay-vpa-pill" id="copyVpaBtn" title="Click to copy UPI ID">
+          <span id="displayUpiId">store@upi</span>
+          <span style="font-size:0.75rem; color:#38BDF8;">📋 Copy</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Primary Launch Button (Universal Android/iOS Intent) -->
+    <a href="#" id="primaryPayLink" class="btn-main-pay">
+      <span>⚡</span> Pay via Any UPI App
+    </a>
+
+    <!-- Individual UPI Apps -->
+    <div class="app-choices-grid">
+      <a href="#" id="gpayLink" class="btn-app-choice">
+        <span style="font-size:1.1rem;">🔵</span>
+        <span>Google Pay</span>
+      </a>
+      <a href="#" id="phonepeLink" class="btn-app-choice">
+        <span style="font-size:1.1rem;">🟣</span>
+        <span>PhonePe</span>
+      </a>
+      <a href="#" id="paytmLink" class="btn-app-choice">
+        <span style="font-size:1.1rem;">🟦</span>
+        <span>Paytm</span>
+      </a>
+    </div>
+
+    <!-- Scannable Offline QR Code -->
+    <div class="qr-container">
+      <div class="qr-canvas-box">
+        <canvas id="qrCanvas"></canvas>
+      </div>
+      <div class="qr-label">Or scan QR code with any camera / UPI app</div>
+    </div>
+
+    <div class="footer-security">
+      <span>🔒</span> 100% Direct-to-bank settlement • Zero merchant commission
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      // 1. Parse URL Parameters
+      var params = new URLSearchParams(window.location.search);
+      var rawPa = (params.get('pa') || 'kirana@upi').trim();
+      var rawPn = (params.get('pn') || 'Store').trim();
+      var rawAm = (params.get('am') || '0').trim();
+
+      // Clean parameters
+      var cleanPa = rawPa; // Keep literal '@' for NPCI UPI standard (do NOT encode @ as %40)
+      var cleanPn = rawPn.replace(/[^a-zA-Z0-9 ]/g, '').trim() || 'Store';
+      var numAmount = parseFloat(rawAm.replace(/[^0-9.]/g, '') || 0).toFixed(2);
+
+      // 2. Populate Display
+      document.getElementById('displayStoreName').textContent = cleanPn;
+      document.getElementById('displayAmount').textContent = '₹' + numAmount;
+      document.getElementById('displayUpiId').textContent = cleanPa;
+
+      // 3. Construct Standard NPCI UPI URI (with literal '@')
+      var upiUri = 'upi://pay?pa=' + cleanPa +
+                   '&pn=' + encodeURIComponent(cleanPn) +
+                   '&am=' + numAmount +
+                   '&cu=INR' +
+                   '&tn=Khata%20Settlement';
+
+      // 4. Android Chrome Intent URIs (Bypasses Chrome custom protocol block)
+      var universalIntent = 'intent://pay?pa=' + cleanPa +
+                            '&pn=' + encodeURIComponent(cleanPn) +
+                            '&am=' + numAmount +
+                            '&cu=INR' +
+                            '&tn=Khata%20Settlement#Intent;scheme=upi;end';
+
+      var gpayIntent = 'intent://pay?pa=' + cleanPa +
+                       '&pn=' + encodeURIComponent(cleanPn) +
+                       '&am=' + numAmount +
+                       '&cu=INR' +
+                       '&tn=Khata%20Settlement#Intent;scheme=upi;package=com.google.android.apps.nbu.paisa.user;end';
+
+      var phonepeIntent = 'intent://pay?pa=' + cleanPa +
+                          '&pn=' + encodeURIComponent(cleanPn) +
+                          '&am=' + numAmount +
+                          '&cu=INR' +
+                          '&tn=Khata%20Settlement#Intent;scheme=upi;package=com.phonepe.app;end';
+
+      var paytmIntent = 'intent://pay?pa=' + cleanPa +
+                        '&pn=' + encodeURIComponent(cleanPn) +
+                        '&am=' + numAmount +
+                        '&cu=INR' +
+                        '&tn=Khata%20Settlement#Intent;scheme=upi;package=net.one97.paytm;end';
+
+      // Launcher function
+      function launchUpi(intentUrl, fallbackUpiUrl) {
+        var isAndroid = /Android/i.test(navigator.userAgent);
+        if (isAndroid) {
+          window.location.href = intentUrl;
+          setTimeout(function() {
+            window.location.href = fallbackUpiUrl;
+          }, 600);
+        } else {
+          window.location.href = fallbackUpiUrl;
+        }
+      }
+
+      // 5. Attach Click Handlers to Buttons
+      var primaryBtn = document.getElementById('primaryPayLink');
+      primaryBtn.href = upiUri;
+      primaryBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        launchUpi(universalIntent, upiUri);
+      });
+
+      var gpayBtn = document.getElementById('gpayLink');
+      gpayBtn.href = upiUri;
+      gpayBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        launchUpi(gpayIntent, upiUri);
+      });
+
+      var phonepeBtn = document.getElementById('phonepeLink');
+      phonepeBtn.href = upiUri;
+      phonepeBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        launchUpi(phonepeIntent, upiUri);
+      });
+
+      var paytmBtn = document.getElementById('paytmLink');
+      paytmBtn.href = upiUri;
+      paytmBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        launchUpi(paytmIntent, upiUri);
+      });
+
+      // 6. Render Local Offline Canvas QR (standard raw upiUri)
+      var canvas = document.getElementById('qrCanvas');
+      if (window.QRCode && typeof QRCode.toCanvas === 'function') {
+        QRCode.toCanvas(canvas, upiUri, {
+          width: 140,
+          margin: 1,
+          color: {
+            dark: '#000000',
+            light: '#FFFFFF'
+          }
+        }, function(err) {
+          if (err) console.error('Canvas QR error:', err);
+        });
+      }
+
+      // 7. Copy VPA Handler
+      document.getElementById('copyVpaBtn').addEventListener('click', function() {
+        if (navigator.clipboard) {
+          navigator.clipboard.writeText(cleanPa).then(function() {
+            alert('UPI ID copied: ' + cleanPa);
+          });
+        }
+      });
+
+      // 8. Auto-Launch on Mobile after initial render
+      var isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      if (isMobile) {
+        setTimeout(function() {
+          launchUpi(universalIntent, upiUri);
+        }, 500);
+      }
+    })();
+  </script>
+</body>
+</html>
