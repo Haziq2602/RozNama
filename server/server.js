@@ -16,18 +16,28 @@ app.use(express.json());
 // Native non-multer raw audio parser (streams audio directly to memory)
 app.use(express.raw({ type: ['audio/*', 'application/octet-stream'], limit: '15mb' }));
 
-// API Routes
+// API Routes (mounted on both /api/* and direct /* to support local and Vercel serverless rewrites)
 app.use('/api/auth', authRoutes);
+app.use('/auth', authRoutes);
+
 app.use('/api/ledger', ledgerRoutes);
+app.use('/ledger', ledgerRoutes);
+
 app.use('/api/ai', aiRoutes);
+app.use('/ai', aiRoutes);
 
 const { isSupabaseConfigured } = require('./db');
+let config = { DEPLOYMENT_MODE: 'LOCAL' };
+try {
+  config = require('../roznama.config');
+} catch (e) {}
 
 // Health Check
-app.get('/api/health', (req, res) => {
+app.get(['/api/health', '/health'], (req, res) => {
   res.json({
     status: 'ok',
     app: 'RozNama Server',
+    deploymentMode: config.DEPLOYMENT_MODE,
     database: isSupabaseConfigured ? 'Supabase Cloud (PostgreSQL)' : 'Local SQLite (roznama.db)',
     timestamp: new Date().toISOString()
   });
@@ -38,7 +48,7 @@ app.use(express.static(path.join(__dirname, '..')));
 
 if (require.main === module) {
   const server = app.listen(PORT, () => {
-    console.log(`🚀 RozNama Server running on http://localhost:${PORT}`);
+    console.log(`🚀 RozNama Server running on http://localhost:${PORT} [Mode: ${config.DEPLOYMENT_MODE}]`);
   });
 
   server.on('error', (err) => {

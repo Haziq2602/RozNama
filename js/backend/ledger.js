@@ -40,9 +40,11 @@ function confirmTransaction() {
     jamaCash: ext.paidAmount,
     udhaarAmount: ext.udhaarAmount,
     items: ext.items,
+    category: ext.category || 'General Kirana / Khata',
     dueDate: ext.dueDate,
     dueDateLabel: ext.dueDateLabel,
     transcript: ext.transcript,
+    mode: ext.extractionMode || (navigator.onLine ? 'online' : 'offline_ml'),
     timestamp: Date.now()
   };
 
@@ -54,7 +56,7 @@ function confirmTransaction() {
   if (typeof saveTransactionOffline === 'function') {
     saveTransactionOffline(newTx);
   }
-  if (typeof syncWithCloud === 'function') {
+  if (navigator.onLine && typeof syncWithCloud === 'function') {
     syncWithCloud();
   }
 

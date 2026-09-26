@@ -107,10 +107,11 @@ async function processTranscript(rawText) {
 
   const token = localStorage.getItem('roznama_jwt_token');
 
-  if (USE_AI_EXTRACTION && navigator.onLine) {
+  // 1. ONLINE CLOUD AI PIPELINE: Groq LLM Extraction
+  if (USE_AI_EXTRACTION && navigator.onLine && token) {
     try {
       if (typeof showToast === 'function') {
-        showToast('Processing voice note...', 'info');
+        showToast('Processing with Cloud AI...', 'info');
       }
 
       const aiUrl = window.location.protocol === 'file:' ? 'http://localhost:5000/api/ai/extract' : '/api/ai/extract';
@@ -118,7 +119,7 @@ async function processTranscript(rawText) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : ''
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({ transcript: rawText })
       });
@@ -126,7 +127,6 @@ async function processTranscript(rawText) {
       const data = await res.json();
 
       if (res.ok && data.success && data.extraction) {
-        // Guarantee date calculation and tomorrow default if udhaar > 0
         const ext = data.extraction;
         if (ext.udhaarAmount > 0) {
           const dateInfo = calculateDueDate(rawText, ext.dueDate);
@@ -137,75 +137,66 @@ async function processTranscript(rawText) {
           ext.dueDateLabel = 'Settled';
         }
 
+        // If category is not provided by backend, classify using offline ML
+        if (!ext.category || ext.category === 'General Items') {
+          const mlResult = classifyCategoryAndItemsOffline(rawText);
+          ext.category = mlResult.category;
+          if (!ext.items || ext.items === 'General Items') {
+            ext.items = mlResult.items;
+          }
+        }
+
+        ext.extractionMode = 'online';
         state.currentExtraction = ext;
+
         if (typeof renderExtractionCard === 'function') {
           renderExtractionCard();
         }
         if (typeof showToast === 'function') {
-          showToast('Entry recorded successfully', 'success');
+          showToast('Entry extracted via Cloud AI', 'success');
         }
         return;
       }
     } catch (err) {
-      console.warn('Backend extraction unavailable, using local rules:', err);
+      console.warn('Backend Cloud AI unavailable, switching to Predefined Offline ML Engine:', err);
     }
   }
 
-  // Fallback to manual rule-based extraction
-  manualRuleBasedExtraction(rawText);
+  // 2. OFFLINE HYBRID PIPELINE: Predefined Offline Machine Learning Classifier & Extractor
+  offlineMLExtraction(rawText);
 }
 
-// Preserved Original Manual Rule-Based Parser (Offline Fallback)
-function manualRuleBasedExtraction(rawText) {
-  const text = rawText.toLowerCase();
+// ============================================================================
+// Offline Vernacular NLP Extraction Engine
+// (Category & Item classification delegated to js/backend/classifier.js)
+// ============================================================================
 
-  // Stop words to exclude from customer names
-  const stopWords = ['will', 'is', 'has', 'paid', 'gave', 'gives', 'give', 'the', 'a', 'an', 'ji', 'ne', 'se', 'ko', 'ka', 'ki', 'he', 'she', 'they', 'buys', 'purchased', 'bought'];
+// Offline Context-Aware Amount Extractor (Jama Cash vs Udhaar Balance)
+function extractAmountsOffline(rawText) {
+  let text = (rawText || '').toLowerCase();
 
-  // 1. Customer Name Extraction
-  let customerName = "Unknown Customer";
-
-  // Check known customers first
-  if (state.customers && state.customers.length > 0) {
-    const knownCustomer = state.customers.find(c => {
-      const firstName = c.name.toLowerCase().split(' ')[0];
-      return text.includes(firstName);
-    });
-
-    if (knownCustomer) {
-      customerName = knownCustomer.name;
-    }
+  // Convert common spoken Hindi number words to digits
+  const hindiWordMap = [
+    { regex: /\b(?:ek\s*sau|ek\s*so)\b/g, val: '100' },
+    { regex: /\b(?:dedh\s*sau|dedh\s*so)\b/g, val: '150' },
+    { regex: /\b(?:do\s*sau|do\s*so)\b/g, val: '200' },
+    { regex: /\b(?:dhai\s*sau|dhai\s*so)\b/g, val: '250' },
+    { regex: /\b(?:teen\s*sau|teen\s*so)\b/g, val: '300' },
+    { regex: /\b(?:char\s*sau|char\s*so)\b/g, val: '400' },
+    { regex: /\b(?:paanch\s*sau|panch\s*sau|panch\s*so)\b/g, val: '500' },
+    { regex: /\b(?:hazaar|hazar)\b/g, val: '1000' }
+  ];
+  for (const h of hindiWordMap) {
+    text = text.replace(h.regex, h.val);
   }
 
-  // If not matched to known customer, try regex extraction
-  if (customerName === "Unknown Customer") {
-    const nameMatch = rawText.match(/^([A-Z][a-z]+(?:\s[A-Z][a-z]+)?)\b/i);
-    if (nameMatch && nameMatch[1]) {
-      const parts = nameMatch[1].split(/\s+/).filter(w => !stopWords.includes(w.toLowerCase()));
-      if (parts.length > 0) {
-        customerName = parts.map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join(' ');
-      }
-    }
-  }
+  const clauses = text.split(/\b(?:but|and|aur|par|then|lekin|,|\.)\b/);
 
-  // Fallback specific names
-  if (customerName === "Unknown Customer") {
-    if (text.includes("rahul")) customerName = "Rahul Sharma";
-    else if (text.includes("ramesh")) customerName = "Ramesh Sharma";
-    else if (text.includes("ramish")) customerName = "Ramish Khan";
-    else if (text.includes("priya")) customerName = "Priya Verma";
-    else if (text.includes("amit")) customerName = "Amit Kumar";
-    else if (text.includes("sunita")) customerName = "Sunita Gupta";
-  }
-
-  // 2. Context-Aware Numeric Extraction (Paid vs Udhaar)
-  const clauses = text.split(/\b(?:but|and|aur|par|then|,|\.)\b/);
-  
   let paidAmount = 0;
   let udhaarAmount = 0;
 
-  const paidKeywords = ['paid', 'gave', 'cash', 'diye', 'mila', 'received', 'jama', 'pay'];
-  const udhaarKeywords = ['udhaar', 'give', 'clear', 'remaining', 'baki', 'due', 'kal', 'tomorrow', 'parso', 'day after tomorrow', 'will pay', 'will give'];
+  const paidKeywords = ['paid', 'gave', 'cash', 'diye', 'diya', 'mila', 'received', 'jama', 'pay', 'advance', 'bhugtan'];
+  const udhaarKeywords = ['udhaar', 'udhar', 'credit', 'give', 'clear', 'remaining', 'baki', 'baaki', 'due', 'kal', 'tomorrow', 'parso', 'day after tomorrow', 'will pay', 'will give', 'likh lo', 'khate me', 'dega', 'denge'];
 
   clauses.forEach(clause => {
     const numbers = clause.match(/\b\d+\b/g);
@@ -239,54 +230,97 @@ function manualRuleBasedExtraction(rawText) {
   if (allNumbers.length === 2 && paidAmount === 0 && udhaarAmount === 0) {
     paidAmount = allNumbers[0];
     udhaarAmount = allNumbers[1];
-  } else if (allNumbers.length === 1) {
+  } else if (allNumbers.length === 1 && paidAmount === 0 && udhaarAmount === 0) {
     const singleNum = allNumbers[0];
-    if (paidKeywords.some(kw => text.includes(kw))) {
-      paidAmount = singleNum;
-    } else if (udhaarKeywords.some(kw => text.includes(kw))) {
+    if (udhaarKeywords.some(kw => text.includes(kw))) {
       udhaarAmount = singleNum;
     } else {
       paidAmount = singleNum;
     }
   }
 
-  // 3. Category & Items Extraction
-  let items = "General Store Items";
-  if (text.includes("grocery") || text.includes("groceries") || text.includes("rashan") || text.includes("ration")) {
-    items = "Groceries & Ration";
-  } else if (text.includes("doodh") || text.includes("milk") || text.includes("bread")) {
-    items = "Dairy & Milk Products";
-  } else if (text.includes("soap") || text.includes("detergent") || text.includes("shampoo")) {
-    items = "Toiletries & Cleaning";
-  } else if (text.includes("oil") || text.includes("rice") || text.includes("flour") || text.includes("atta")) {
-    items = "Cooking Oil & Staples";
-  } else if (text.includes("cosmetics")) {
-    items = "Personal Care & Cosmetics";
+  return { paidAmount, udhaarAmount };
+}
+
+// Offline Customer Name Extractor
+function extractCustomerNameOffline(rawText) {
+  const text = (rawText || '').toLowerCase();
+  const stopWords = ['will', 'is', 'has', 'paid', 'gave', 'gives', 'give', 'the', 'a', 'an', 'ji', 'ne', 'se', 'ko', 'ka', 'ki', 'he', 'she', 'they', 'buys', 'purchased', 'bought', 'bhai', 'seth', 'uncle', 'aunty'];
+
+  // 1. Check known registered store customers in state
+  if (state.customers && state.customers.length > 0) {
+    const knownCustomer = state.customers.find(c => {
+      const firstName = (c.name || '').toLowerCase().split(' ')[0];
+      return firstName.length > 2 && text.includes(firstName);
+    });
+    if (knownCustomer) {
+      return knownCustomer.name;
+    }
   }
 
-  // 4. Exact Date Calculation (defaults to tomorrow if udhaar > 0 and no date spoken)
+  // 2. Try Regex pattern at beginning of utterance
+  const nameMatch = rawText.match(/^([A-Z][a-z]+(?:\s[A-Z][a-z]+)?)\b/i);
+  if (nameMatch && nameMatch[1]) {
+    const parts = nameMatch[1].split(/\s+/).filter(w => !stopWords.includes(w.toLowerCase()));
+    if (parts.length > 0) {
+      return parts.map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join(' ');
+    }
+  }
+
+  // 3. Common Indian Name Fallbacks
+  if (text.includes("rahul")) return "Rahul Sharma";
+  if (text.includes("ramesh")) return "Ramesh Sharma";
+  if (text.includes("ramish")) return "Ramish Khan";
+  if (text.includes("priya")) return "Priya Verma";
+  if (text.includes("amit")) return "Amit Kumar";
+  if (text.includes("sunita")) return "Sunita Gupta";
+  if (text.includes("suresh")) return "Suresh Kumar";
+  if (text.includes("vikram")) return "Vikram Singh";
+  if (text.includes("mohit")) return "Mohit Patel";
+
+  return "Walk-in Customer";
+}
+
+// Offline Machine Learning Full Extraction Handler
+function offlineMLExtraction(rawText) {
+  // 1. Context-Aware Amount Extraction
+  const { paidAmount, udhaarAmount } = extractAmountsOffline(rawText);
+
+  // 2. Customer Name Extraction
+  const customerName = extractCustomerNameOffline(rawText);
+
+  // 3. Predefined ML Category & Items Classification
+  const { category, items } = classifyCategoryAndItemsOffline(rawText);
+
+  // 4. Exact Relative Due Date Calculation
   let formattedDueDate = null;
   let dueDateLabel = "Settled";
 
   if (udhaarAmount > 0) {
-    const dateInfo = calculateDueDate(text);
+    const dateInfo = calculateDueDate(rawText);
     formattedDueDate = dateInfo.dueDate;
     dueDateLabel = dateInfo.dueDateLabel;
   }
 
-  // Set Extraction Result in State
+  // 5. Store in State with Extraction Mode
   state.currentExtraction = {
     customerName,
     paidAmount,
     udhaarAmount,
     items,
+    category,
     dueDate: formattedDueDate,
     dueDateLabel,
-    transcript: rawText
+    transcript: rawText,
+    extractionMode: 'offline_ml'
   };
 
-  // Trigger UI Extraction Card Render
+  // 6. Trigger UI Extraction Review Card
   if (typeof renderExtractionCard === 'function') {
     renderExtractionCard();
+  }
+
+  if (typeof showToast === 'function') {
+    showToast('⚡ Extracted locally via Predefined ML Engine', 'info');
   }
 }

@@ -1,6 +1,13 @@
 const { createClient } = require('@supabase/supabase-js');
-const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
+
+let sqlite3 = null;
+try {
+  sqlite3 = require('sqlite3').verbose();
+} catch (err) {
+  // Graceful fallback for serverless environments (e.g. Vercel) where native C++ SQLite bindings are omitted
+  console.warn('ℹ️ SQLite3 native module not available; operating with Supabase Cloud Database.');
+}
 
 // 1. Supabase Cloud Configuration
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -26,52 +33,60 @@ if (isSupabaseConfigured) {
   }
 }
 
-// 2. Local SQLite Fallback Setup
-const dbPath = path.resolve(__dirname, 'roznama.db');
-const db = new sqlite3.Database(dbPath, (err) => {
-  if (err) {
-    console.error('❌ Failed to connect to SQLite database:', err.message);
-  } else if (!isSupabaseConfigured) {
-    console.log('ℹ️ Supabase credentials not set in .env; Connected to local SQLite at:', dbPath);
-  }
-});
+// 2. Local SQLite Fallback Setup (Used when running locally or when Supabase is not configured)
+let db = null;
+if (sqlite3) {
+  const dbPath = process.env.VERCEL ? path.join('/tmp', 'roznama.db') : path.resolve(__dirname, 'roznama.db');
+  db = new sqlite3.Database(dbPath, (err) => {
+    if (err) {
+      console.error('❌ Failed to connect to SQLite database:', err.message);
+    } else if (!isSupabaseConfigured) {
+      console.log('ℹ️ Supabase credentials not set in .env; Connected to local SQLite at:', dbPath);
+    }
+  });
 
-// Initialize SQLite schema
-db.serialize(() => {
-  db.run(`
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      phone TEXT UNIQUE NOT NULL,
-      name TEXT NOT NULL,
-      store_name TEXT DEFAULT 'Kirana Store',
-      password_hash TEXT NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
+  // Initialize SQLite schema
+  db.serialize(() => {
+    db.run(`
+      CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        phone TEXT UNIQUE NOT NULL,
+        name TEXT NOT NULL,
+        store_name TEXT DEFAULT 'Kirana Store',
+        password_hash TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
 
-  db.run(`
-    CREATE TABLE IF NOT EXISTS transactions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      client_id TEXT NOT NULL,
-      user_id INTEGER NOT NULL,
-      customer_name TEXT NOT NULL,
-      items TEXT DEFAULT '',
-      jama_cash REAL DEFAULT 0,
-      udhaar_amount REAL DEFAULT 0,
-      due_date TEXT DEFAULT '',
-      raw_transcript TEXT DEFAULT '',
-      timestamp INTEGER NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
-      UNIQUE(user_id, client_id)
-    )
-  `);
-});
+    db.run(`
+      CREATE TABLE IF NOT EXISTS transactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        client_id TEXT NOT NULL,
+        user_id INTEGER NOT NULL,
+        customer_name TEXT NOT NULL,
+        items TEXT DEFAULT '',
+        category TEXT DEFAULT 'General Kirana / Khata',
+        jama_cash REAL DEFAULT 0,
+        udhaar_amount REAL DEFAULT 0,
+        due_date TEXT DEFAULT '',
+        raw_transcript TEXT DEFAULT '',
+        timestamp INTEGER NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+        UNIQUE(user_id, client_id)
+      )
+    `);
+
+    // Ensure category column exists in existing SQLite roznama.db
+    db.run(`ALTER TABLE transactions ADD COLUMN category TEXT DEFAULT 'General Kirana / Khata'`, () => {});
+  });
+}
 
 // Promisified SQLite Query Helpers
 const dbQuery = {
   get: (sql, params = []) => {
     return new Promise((resolve, reject) => {
+      if (!db) return reject(new Error('SQLite database is not initialized. Supabase is active.'));
       db.get(sql, params, (err, row) => {
         if (err) reject(err);
         else resolve(row);
@@ -80,6 +95,7 @@ const dbQuery = {
   },
   all: (sql, params = []) => {
     return new Promise((resolve, reject) => {
+      if (!db) return reject(new Error('SQLite database is not initialized. Supabase is active.'));
       db.all(sql, params, (err, rows) => {
         if (err) reject(err);
         else resolve(rows);
@@ -88,6 +104,7 @@ const dbQuery = {
   },
   run: (sql, params = []) => {
     return new Promise((resolve, reject) => {
+      if (!db) return reject(new Error('SQLite database is not initialized. Supabase is active.'));
       db.run(sql, params, function (err) {
         if (err) reject(err);
         else resolve({ lastID: this.lastID, changes: this.changes });
@@ -169,35 +186,64 @@ const dbService = {
     );
   },
 
-  async upsertTransaction({ clientId, userId, customerName, items, jamaCash, udhaarAmount, dueDate, rawTranscript, timestamp }) {
+  async upsertTransaction({ clientId, userId, customerName, items, category, jamaCash, udhaarAmount, dueDate, rawTranscript, timestamp }) {
+    const cat = category || 'General Kirana / Khata';
     if (this.isSupabase()) {
-      const { data, error } = await supabase
-        .from('transactions')
-        .upsert(
-          {
-            client_id: clientId,
-            user_id: userId,
-            customer_name: customerName,
-            items: items || '',
-            jama_cash: Number(jamaCash || 0),
-            udhaar_amount: Number(udhaarAmount || 0),
-            due_date: dueDate || '',
-            raw_transcript: rawTranscript || '',
-            timestamp: Number(timestamp || Date.now())
-          },
-          { onConflict: 'user_id, client_id' }
-        )
-        .select()
-        .single();
-      if (error) throw error;
-      return data;
+      try {
+        const { data, error } = await supabase
+          .from('transactions')
+          .upsert(
+            {
+              client_id: clientId,
+              user_id: userId,
+              customer_name: customerName,
+              items: items || '',
+              category: cat,
+              jama_cash: Number(jamaCash || 0),
+              udhaar_amount: Number(udhaarAmount || 0),
+              due_date: dueDate || '',
+              raw_transcript: rawTranscript || '',
+              timestamp: Number(timestamp || Date.now())
+            },
+            { onConflict: 'user_id, client_id' }
+          )
+          .select()
+          .single();
+        if (error) throw error;
+        return data;
+      } catch (err) {
+        // If Supabase table schema does not yet have 'category' column, fallback without it
+        if (err.message && err.message.includes('category')) {
+          const { data, error } = await supabase
+            .from('transactions')
+            .upsert(
+              {
+                client_id: clientId,
+                user_id: userId,
+                customer_name: customerName,
+                items: items || '',
+                jama_cash: Number(jamaCash || 0),
+                udhaar_amount: Number(udhaarAmount || 0),
+                due_date: dueDate || '',
+                raw_transcript: rawTranscript || '',
+                timestamp: Number(timestamp || Date.now())
+              },
+              { onConflict: 'user_id, client_id' }
+            )
+            .select()
+            .single();
+          if (error) throw error;
+          return data;
+        }
+        throw err;
+      }
     }
 
     await dbQuery.run(
       `INSERT OR REPLACE INTO transactions 
-        (client_id, user_id, customer_name, items, jama_cash, udhaar_amount, due_date, raw_transcript, timestamp) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [clientId, userId, customerName, items || '', Number(jamaCash || 0), Number(udhaarAmount || 0), dueDate || '', rawTranscript || '', Number(timestamp || Date.now())]
+        (client_id, user_id, customer_name, items, category, jama_cash, udhaar_amount, due_date, raw_transcript, timestamp) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [clientId, userId, customerName, items || '', cat, Number(jamaCash || 0), Number(udhaarAmount || 0), dueDate || '', rawTranscript || '', Number(timestamp || Date.now())]
     );
 
     return {
@@ -205,6 +251,7 @@ const dbService = {
       user_id: userId,
       customer_name: customerName,
       items: items || '',
+      category: cat,
       jama_cash: Number(jamaCash || 0),
       udhaar_amount: Number(udhaarAmount || 0),
       due_date: dueDate || '',

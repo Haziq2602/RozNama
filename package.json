@@ -1,0 +1,20 @@
+{
+  "name": "roznama",
+  "version": "1.0.0",
+  "description": "RozNama (रोज़नामा) - Multilingual Voice Ledger for Kirana Stores",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js",
+    "dev": "node --watch server/server.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.116.0",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^17.4.2",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "qrcode": "^1.5.4",
+    "sqlite3": "^5.1.7"
+  }
+}

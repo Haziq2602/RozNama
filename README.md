@@ -88,23 +88,21 @@ Prevents balance corruption and synchronization overwrites:
 
 ---
 
-### 5. 🎙️ Dual-Engine Voice AI Pipeline (Online Groq + Offline Web Speech)
-* **Online Ultra-Low Latency**: Streams raw audio to **Groq Whisper Large v3 Turbo (`whisper-large-v3-turbo`)**, achieving >95% transcription accuracy on regional Indian accents, noisy market environments, and mixed Hindi/English phrases (*"Ramesh ne 300 cash diya aur 150 kal dega"*).
-* **Context-Aware Entity Extraction**: Powered by **Groq LLM (`openai/gpt-oss-120b`)** in strict JSON mode to extract:
-  * Customer Name (*Ramesh Sharma*)
-  * Cash Received (*₹300 Jama Cash*)
-  * Credit Given (*₹150 Udhaar*)
-  * Items Purchased (*Milk / Ration*)
-  * Intelligent Relative Due Date (*"kal" → Tomorrow's date; "agle hafte" → 7 days out*)
-* **Human-in-the-Loop Safeguard**: Before anything is committed to the ledger, an interactive review card appears, allowing the vendor to verify or adjust figures with a single tap.
-* **Offline Fallback**: Automatically degrades gracefully to the local browser Web Speech API and regex heuristic parser if the vendor loses internet connectivity.
+### 5. 🎙️ Hybrid Voice & Predefined ML Pipeline (Online Cloud AI + Offline Local ML)
+* **Online Ultra-Low Latency**: Streams raw audio to **Groq Whisper Large v3 Turbo (`whisper-large-v3-turbo`)** and **Groq LLM (`openai/gpt-oss-120b`)** in strict JSON mode to extract customer names, cash, credit, items, retail category, and relative due dates.
+* **Predefined Offline Machine Learning Classifier & Extractor**:
+  * **Zero Audio Ingestion Offline**: When disconnected from the internet, audio recordings are never stored as bulky audio blobs in IndexedDB. Instead, the browser's built-in Web Speech API translates speech into local text instantly.
+  * **Local NLP & ML Category Classifier**: Analyzes the transcript on-device using a feature-weighted classifier to categorize transactions into 8 retail domains (*Groceries & Ration, Dairy & Milk Products, Cooking Oils & Ghee, Spices & Masala, Snacks & Beverages, Toiletries & Cleaning, Personal Care & Cosmetics, General Kirana*).
+  * **Vernacular Amount & Item Extraction**: Separates purchased items from categories and detects cash received (*Jama*) vs pending credit (*Udhaar*) through proximity scoring and Hindi/Hinglish idioms.
+* **Human-in-the-Loop Confirmation**: Displays an interactive card for the storekeeper to verify, edit, and confirm customer name, cash, udhaar, items, category, and due date before saving.
+* **Smart Internet Reconnect Dialog**: When connectivity is restored, RozNama detects the reconnection, displays a custom pop-up dialog box, and asks the vendor if they wish to sync their offline IndexedDB transactions to Supabase Cloud.
 
 ---
 
 ### 6. ☁️ Enterprise Multi-Store Cloud Isolation (Supabase PostgreSQL + SQLite)
 * **Multi-Tenant Security**: Every storekeeper gets a dedicated, isolated account secured by JSON Web Tokens (JWT) and bcrypt password hashing.
 * **Cloud + Local Resilience**: Backed by **Supabase Cloud PostgreSQL** with automatic offline fallback to **local SQLite (`roznama.db`)** and client-side **IndexedDB**.
-* **Offline Outbox Queue**: Entries made without internet are queued in IndexedDB and automatically pushed to the cloud once connectivity resumes.
+* **IndexedDB Outbox Queue**: Offline entries are stored locally as structured JSON records and synced to Supabase Cloud upon confirmation.
 
 ---
 
@@ -119,11 +117,11 @@ flowchart TD
         IDB[(IndexedDB Local Outbox)]
     end
 
-    subgraph SpeechAI [Voice & Intelligence Pipeline]
-        MIC[Vendor Mic Input] -->|Raw Audio Stream| WSP[Groq Whisper Large v3 Turbo]
+    subgraph SpeechAI [Voice & Hybrid Intelligence Pipeline]
+        MIC[Vendor Mic Input] -->|Raw Audio Stream - Online| WSP[Groq Whisper Large v3 Turbo]
         MIC -.->|Offline Fallback| WSAPI[Browser Web Speech API]
         WSP -->|Transcript| LLM[Groq GPT-OSS-120B Extraction]
-        WSAPI -.->|Offline Fallback| REGEX[Local Heuristic Entity Parser]
+        WSAPI -.->|Offline Fallback| OFFLINE_ML[Predefined Local ML & Category Extractor]
     end
 
     subgraph LedgerCore [Ledger Core & Accounting]
@@ -146,7 +144,7 @@ flowchart TD
 
     MIC --> UI
     LLM --> REV
-    REGEX --> REV
+    OFFLINE_ML --> REV
     REV --> CHRONO
     CLEAR --> CHRONO
     CHRONO --> IDB
@@ -172,66 +170,132 @@ flowchart TD
 
 ---
 
-## ⚡ Quick Start Guide
+## ⚡ Deployment & Quick Start Guide
 
-### 1. Prerequisites
-* **Node.js**: v18.0.0 or higher ([Download Node.js](https://nodejs.org/))
-* **npm**: v9.0.0 or higher
-* A modern web browser (Google Chrome, Microsoft Edge, Safari, or Brave)
+RozNama features a unified deployment engine governed by **[roznama.config.js](file:///c:/AIML/Projects/orchestrate/RozNama/roznama.config.js)** with a **Single-Variable Switch (`DEPLOYMENT_MODE`)**:
 
-### 2. Installation
-Clone the repository and install server dependencies:
-```bash
-git clone https://github.com/<your-username>/RozNama.git
-cd RozNama/server
-npm install
+```javascript
+// roznama.config.js
+module.exports = {
+  DEPLOYMENT_MODE: 'LOCAL', // Toggle between 'LOCAL' (default) and 'VERCEL'
+  OWNER_DEPLOY_KEY: process.env.OWNER_DEPLOY_KEY || 'roznama_owner_haziq_2026_secured'
+};
 ```
-
-### 3. Environment Configuration
-Create a `.env` file inside the `server/` directory:
-```env
-PORT=5000
-JWT_SECRET=your_super_secret_jwt_key_here
-GROQ_API_KEY=your_groq_api_key_here
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_KEY=your_supabase_anon_key_here
-```
-> **Security Note**: The `.env` file is automatically ignored by Git to ensure credentials are never pushed to public repositories.
-
-### 4. Running Locally
-Start the server from the `server/` directory:
-```bash
-node server.js
-```
-The server will boot and connect to Supabase Cloud:
-```
-⚡ Connected to Supabase Cloud Database at: https://...
-🚀 RozNama Server running on http://localhost:5000
-```
-Open your browser and navigate to:
-👉 **`http://localhost:5000`**
 
 ---
 
-## 📂 Project Directory Structure
+### 💻 A. Local Deployment (Default — Recommended for Judges & Evaluators)
+
+When `DEPLOYMENT_MODE: 'LOCAL'`, RozNama runs completely locally without external cloud dependencies. If internet is disconnected, the **Predefined Offline ML Classifier & Vernacular Amount Extractor** activates automatically with IndexedDB storage!
+
+#### 1. Prerequisites
+* **Node.js**: v18.0.0 or higher ([Download Node.js](https://nodejs.org/))
+* **npm**: v9.0.0 or higher
+* Modern web browser (Chrome, Edge, Brave, or Safari)
+
+#### 2. Installation & Quick Boot
+From the project root directory:
+```bash
+# 1. Install dependencies
+npm install
+
+# 2. Boot the RozNama server
+npm start
+```
+
+The application boots immediately with local SQLite (`roznama.db`):
+```text
+🚀 RozNama Server running on http://localhost:5000 [Mode: LOCAL]
+```
+👉 Open your browser at: **`http://localhost:5000`**
+
+*(Optional)* If you wish to connect to your own Supabase Cloud or Groq Whisper AI locally, copy `.env.example` to `server/.env` and insert your API keys.
+
+---
+
+### ☁️ B. Vercel Cloud Deployment (Owner-Protected Anti-Theft Guard)
+
+> 🛡️ **Anti-Theft Security Guard**: Cloud deployment on Vercel is strictly gated to the verified project owner. Any unauthorized attempts to deploy this repository to another Vercel account without the secret `OWNER_DEPLOY_KEY` are automatically rejected with a **`403 Forbidden (LOCKED_UNAUTHORIZED_OWNER)`** response. Hackathon judges can seamlessly evaluate the project locally with `npm start`!
+
+#### Step-by-Step Vercel Deployment Instructions (For Project Owner):
+
+1. **Step 1: Switch Deployment Mode**
+   In `roznama.config.js`, change `DEPLOYMENT_MODE` from `'LOCAL'` to `'VERCEL'`:
+   ```javascript
+   // roznama.config.js
+   module.exports = {
+     DEPLOYMENT_MODE: 'VERCEL', // <-- Change from 'LOCAL' to 'VERCEL'
+     OWNER_DEPLOY_KEY: process.env.OWNER_DEPLOY_KEY || 'roznama_owner_haziq_2026_secured'
+   };
+   ```
+
+2. **Step 2: Commit and Push to GitHub**
+   ```bash
+   git add .
+   git commit -m "chore: enable VERCEL deployment mode and modular structure"
+   git push origin main
+   ```
+
+3. **Step 3: Import Project in Vercel**
+   - Go to [vercel.com](https://vercel.com) and log in.
+   - Click **"Add New..." ➔ "Project"**.
+   - Select your GitHub repository (`orchestrate` / `RozNama`).
+   - If `RozNama` is in a subfolder, set **Root Directory** to `RozNama`. If it's at root, leave as `./`.
+   - Set **Framework Preset** to **Other** (Vercel automatically detects `vercel.json` and `api/index.js`).
+
+4. **Step 4: Configure Environment Variables in Vercel**
+   Under the **Environment Variables** section in the Vercel deployment modal (or in **Settings ➔ Environment Variables**), add the following:
+
+   | Key | Value | Description |
+   | :--- | :--- | :--- |
+   | `OWNER_DEPLOY_KEY` | `roznama_owner_haziq_2026_secured` | **Mandatory.** Unlocks the anti-theft cloud gatekeeper. |
+   | `DEPLOYMENT_MODE` | `VERCEL` | Confirms serverless cloud mode. |
+   | `SUPABASE_URL` | `https://your-project.supabase.co` | Your Supabase PostgreSQL database URL. |
+   | `SUPABASE_KEY` | `your-supabase-service-or-anon-key` | Your Supabase API access key. |
+   | `JWT_SECRET` | `your_ultra_secure_jwt_secret_phrase` | Secret key for storekeeper auth sessions. |
+   | `GROQ_API_KEY` | `gsk_your_groq_whisper_and_llm_api_key` | *(Optional)* For cloud Whisper voice recognition. |
+   | `GEMINI_API_KEY` | `your_google_gemini_api_key` | *(Optional)* AI assistant fallback key. |
+
+5. **Step 5: Deploy & Verify**
+   - Click **Deploy**.
+   - Vercel will install dependencies, compile the serverless function, and provision a global HTTPS URL (e.g. `https://roznama.vercel.app`).
+   - Test health check: Visit `https://roznama.vercel.app/api/health`. You will see:
+     ```json
+     { "status": "ok", "service": "RozNama API Server", "deploymentMode": "VERCEL" }
+     ```
+   - Open `https://roznama.vercel.app` in your mobile or desktop browser — your 4-view voice ledger is live!
+
+---
+
+## 📂 Modular Project Directory Structure
+
+The codebase is organized into cleanly decoupled modules for maximum maintainability:
 
 ```
 RozNama/
 ├── index.html                  # 4-View SPA HTML structure & Floating Navigation Island
 ├── style.css                   # iOS glassmorphism design system, elevated badges & responsive styles
 ├── pay.html                    # Universal 1-tap UPI payment gateway (Android intent & deep links)
+├── roznama.config.js           # Master deployment switch ('LOCAL' vs 'VERCEL') & Owner Guard
+├── vercel.json                 # Vercel serverless function & client-side static routing
+├── package.json                # Root package configuration for local and cloud deployment
+├── .env.example                # Sample environment variables template
 ├── README.md                   # Comprehensive project documentation & architecture guide
+├── api/
+│   └── index.js                # Vercel serverless function entry point with anti-theft gatekeeper
 ├── js/
 │   ├── frontend/
 │   │   ├── qrcode.min.js       # Zero-dependency offline client-side QR generator (window.QRCode)
-│   │   ├── ui.js               # Multi-view switcher, customer directory, sorting & reminder modals
+│   │   ├── modals.js           # [MODULAR] All interactive popup dialogs (Clear Due, Phone, UPI, WhatsApp QR, Reconnect)
+│   │   ├── ui.js               # [MODULAR] 4-view SPA controller, stat counters, customer directory & transaction table
 │   │   ├── auth.js             # Vendor session manager, JWT handler & landing page controller
-│   │   └── speech.js           # MediaRecorder audio streaming & browser Web Speech engine
+│   │   └── speech.js           # Resilient voice STT engine & offline input redirector
 │   └── backend/
 │       ├── app.js              # Application bootstrap & DOM event listeners
+│       ├── classifier.js       # [MODULAR] Predefined 8 retail categories ML taxonomy, feature weights & scoring engine
 │       ├── store.js            # IndexedDB outbox queue & chronological double-entry replay engine
-│       ├── ledger.js           # Transaction processing & speech feedback triggers
-│       ├── parser.js           # Groq LLM entity extraction & offline regex fallback
+│       ├── ledger.js           # Transaction processing & category confirmation triggers
+│       ├── parser.js           # Hybrid Groq LLM & Predefined Offline ML Classifier & Extractor
 │       └── demo-data.js        # Voice recognition helper phrases & initial test seeds
 └── server/
     ├── server.js               # Express application entry point & static file server

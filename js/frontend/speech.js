@@ -11,18 +11,37 @@ async function toggleRecording() {
   const statusEl = document.getElementById('recordingStatus');
 
   if (!state.isRecording) {
+    // 1. OFFLINE CHECK: On desktop browsers, Speech-to-Text requires internet connectivity.
+    // Notify the user immediately, redirect to manual input, and use the Offline ML Extractor.
+    if (!navigator.onLine) {
+      state.isRecording = false;
+      if (micBtn) micBtn.classList.remove('recording');
+
+      if (statusEl) {
+        statusEl.classList.remove('listening');
+        statusEl.innerHTML = `<span style="color:#FBBF24; font-weight:600;">⚠️ Offline: Voice STT unavailable. Type entry below!</span>`;
+      }
+      const inputEl = document.getElementById('transcriptInput');
+      if (inputEl) {
+        inputEl.focus();
+        inputEl.placeholder = "Offline mode: Type entry here (e.g. Ramesh ne 300 cash diya 150 baki)...";
+      }
+      if (typeof showToast === 'function') {
+        showToast('⚠️ Disconnected from internet: Voice STT requires internet. Type your entry below — Offline ML will extract categories & amounts!', 'info');
+      }
+      return;
+    }
+
     state.isRecording = true;
     if (micBtn) micBtn.classList.add('recording');
 
-    // Decide between Online Groq Whisper vs Offline Browser Speech
+    // 2. ONLINE MODE: Decide between Online Groq Whisper vs Browser Speech
     const token = localStorage.getItem('roznama_jwt_token');
-    const isOnlineWithWhisper = navigator.onLine && token && navigator.mediaDevices && window.MediaRecorder;
+    const isOnlineWithWhisper = token && navigator.mediaDevices && window.MediaRecorder;
 
     if (isOnlineWithWhisper) {
-      // 1. ONLINE MODE: High-accuracy raw audio capture for Groq Whisper Large v3
       startWhisperAudioRecording(statusEl);
     } else {
-      // 2. OFFLINE MODE: Fallback to local browser Web Speech API
       startBrowserSpeechRecording(statusEl);
     }
 
@@ -118,7 +137,7 @@ async function sendAudioToWhisper(audioBlob) {
   } catch (err) {
     console.error('Audio upload to Whisper failed:', err);
     if (typeof showToast === 'function') {
-      showToast('Connection failed. Please check backend server.', 'error');
+      showToast('Connection interrupted. Please tap mic again to use Offline Speech or type manually.', 'info');
     }
   } finally {
     if (statusEl) {
@@ -160,6 +179,19 @@ function startBrowserSpeechRecording(statusEl) {
 
     recognition.onerror = (err) => {
       console.warn("Browser Speech Recognition Error:", err);
+      stopRecording();
+      const inputEl = document.getElementById('transcriptInput');
+      if (inputEl) {
+        inputEl.focus();
+        inputEl.placeholder = "Offline mode: Type entry here (e.g. Ramesh ne 300 cash diya 150 baki)...";
+      }
+      if (statusEl) {
+        statusEl.classList.remove('listening');
+        statusEl.innerHTML = `<span style="color:#FBBF24; font-weight:600;">⚠️ Voice unavailable without internet. Type entry below!</span>`;
+      }
+      if (typeof showToast === 'function') {
+        showToast('⚠️ Voice recognition requires internet. Type your entry below — Offline ML will extract categories & amounts!', 'info');
+      }
     };
 
     recognition.onend = () => {

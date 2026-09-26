@@ -27,6 +27,7 @@ Extract the following JSON fields:
 - "jamaCash": Exact cash received RIGHT NOW (number). If full credit/no cash paid, return 0.
 - "udhaarAmount": Pending debt/credit balance to be collected LATER (number). If full payment/no udhaar, return 0.
 - "items": Comma-separated list of purchased items (string). E.g. "Chawal, Tel". Default to "General Kirana Items" if unspecified.
+- "category": Retail store category (string, choose best match from: "Groceries & Ration", "Dairy & Milk Products", "Cooking Oils & Ghee", "Spices & Masala", "Snacks & Beverages", "Toiletries & Cleaning", "Personal Care & Cosmetics", "General Kirana / Khata").
 - "dueDate": Due date or relative day if promised (string, e.g. "tomorrow", "day after tomorrow", "next Monday", "2026-09-20", or "").
 
 Rules:
@@ -175,6 +176,7 @@ Transcript: "${transcript.trim()}"`;
       paidAmount,
       udhaarAmount,
       items: parsed.items || 'General Items',
+      category: parsed.category || 'General Kirana / Khata',
       dueDate: dateInfo.dueDate,
       dueDateLabel: dateInfo.dueDateLabel,
       transcript: transcript.trim()

@@ -209,8 +209,8 @@ function getAllFromStore(storeName) {
   });
 }
 
-// Save a new transaction with Offline Queue tracking
-async function saveTransactionOffline(newTx, audioBlob = null) {
+// Save a new transaction with Offline Queue tracking (Pure JSON, No Audio)
+async function saveTransactionOffline(newTx) {
   if (!db) await openDB();
   
   const tx = db.transaction(['transactions', 'outbox'], 'readwrite');
@@ -220,7 +220,6 @@ async function saveTransactionOffline(newTx, audioBlob = null) {
     id: `outbox-${newTx.id}`,
     txId: newTx.id,
     data: newTx,
-    audioBlob: audioBlob,
     status: navigator.onLine ? 'synced' : 'pending_sync',
     createdAt: new Date().toISOString()
   };
@@ -228,53 +227,108 @@ async function saveTransactionOffline(newTx, audioBlob = null) {
 
   if (!navigator.onLine) {
     if (typeof showToast === 'function') {
-      showToast('⚠️ Saved locally to IndexedDB (Pending Sync)', 'info');
+      showToast('⚠️ Offline Mode: Saved locally to IndexedDB', 'info');
     }
   } else {
     syncPendingQueue();
   }
 }
 
-// Sync Pending Outbox Items
+// Sync Pending Outbox Items to Supabase Cloud
 async function syncPendingQueue() {
-  if (!navigator.onLine || !db) return;
+  if (!navigator.onLine || !db) return 0;
 
   try {
     const allOutbox = await getAllFromStore('outbox');
     const pendingItems = allOutbox.filter(item => item.status === 'pending_sync');
 
-    if (pendingItems.length === 0) return;
+    if (pendingItems.length === 0) return 0;
     pendingItems.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
 
-    const tx = db.transaction('outbox', 'readwrite');
-    const store = tx.objectStore('outbox');
+    const token = localStorage.getItem('roznama_jwt_token');
+    const syncUrl = window.location.protocol === 'file:' ? 'http://localhost:5000/api/ledger/sync' : '/api/ledger/sync';
 
-    for (const item of pendingItems) {
-      item.status = 'synced';
-      item.syncedAt = new Date().toISOString();
-      store.put(item);
+    if (token) {
+      const pendingTxs = pendingItems.map(item => item.data);
+      const res = await fetch(syncUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ transactions: pendingTxs })
+      });
+
+      if (res.ok) {
+        const tx = db.transaction('outbox', 'readwrite');
+        const store = tx.objectStore('outbox');
+        for (const item of pendingItems) {
+          item.status = 'synced';
+          item.syncedAt = new Date().toISOString();
+          store.put(item);
+        }
+      }
+    } else {
+      const tx = db.transaction('outbox', 'readwrite');
+      const store = tx.objectStore('outbox');
+      for (const item of pendingItems) {
+        item.status = 'synced';
+        item.syncedAt = new Date().toISOString();
+        store.put(item);
+      }
     }
 
-    if (typeof showToast === 'function') {
-      showToast(`🔄 Synced ${pendingItems.length} pending offline entry(ies) to cloud!`, 'success');
-    }
+    return pendingItems.length;
   } catch (err) {
     console.error("Sync Queue Error:", err);
+    throw err;
   }
 }
 
-// Network Status Listeners
+// Network Status Listeners - Hybrid Online/Offline Handler
 function setupNetworkListeners() {
-  window.addEventListener('online', () => {
+  window.addEventListener('online', async () => {
     state.isOnline = true;
-    if (typeof showToast === 'function') showToast('🟢 Back Online! Syncing...', 'success');
-    syncPendingQueue();
-    syncWithCloud();
+    const statusEl = document.getElementById('recordingStatus');
+    const inputEl = document.getElementById('transcriptInput');
+    if (statusEl) {
+      statusEl.innerHTML = `Tap microphone and speak entry`;
+    }
+    if (inputEl) {
+      inputEl.placeholder = "Or type here... e.g. Ramesh paid 500 cash and 200 udhaar for groceries";
+    }
+
+    // Check count of pending offline entries stored in IndexedDB
+    let pendingCount = 0;
+    try {
+      if (!db) await openDB();
+      const allOutbox = await getAllFromStore('outbox');
+      pendingCount = allOutbox.filter(item => item.status === 'pending_sync').length;
+    } catch (e) {
+      console.warn("Could not query pending outbox count:", e);
+    }
+
+    // Notify user via Pop-up Dialog Box and ask whether to sync IndexedDB to Supabase
+    if (typeof openInternetRestoredModal === 'function') {
+      openInternetRestoredModal(pendingCount);
+    } else if (typeof showToast === 'function') {
+      showToast('🟢 Internet Connected! You can sync your Khata to Supabase.', 'success');
+    }
   });
 
   window.addEventListener('offline', () => {
     state.isOnline = false;
-    if (typeof showToast === 'function') showToast('⚠️ Offline Mode. Data saved in IndexedDB.', 'info');
+    const statusEl = document.getElementById('recordingStatus');
+    const inputEl = document.getElementById('transcriptInput');
+    if (statusEl) {
+      statusEl.innerHTML = `<span style="color:#FBBF24; font-weight:600;">⚠️ Offline Mode: Type entry below (Offline ML active)</span>`;
+    }
+    if (inputEl) {
+      inputEl.placeholder = "Offline mode: Type here (e.g. Ramesh ne 300 cash diya 150 baki)...";
+    }
+    if (typeof showToast === 'function') {
+      showToast('⚠️ Offline Mode Activated: Using Predefined Local ML & IndexedDB', 'info');
+    }
   });
 }
 

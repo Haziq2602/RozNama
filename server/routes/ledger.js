@@ -19,6 +19,7 @@ router.get('/transactions', async (req, res) => {
         id: r.client_id || String(r.id),
         customerName: r.customer_name,
         items: r.items || 'General Items',
+        category: r.category || 'General Kirana / Khata',
         type: isSettlement ? 'settlement' : (Number(r.udhaar_amount || 0) > 0 ? 'credit_debit' : 'paid'),
         isSettlement: isSettlement,
         settledAmount: isSettlement ? Number(r.jama_cash || 0) : 0,
@@ -43,7 +44,7 @@ router.get('/transactions', async (req, res) => {
 // Create single transaction
 router.post('/transaction', async (req, res) => {
   try {
-    const { id, customerName, items, jamaCash, paidAmount, udhaarAmount, dueDate, dueDateLabel, rawTranscript, transcript, timestamp } = req.body;
+    const { id, customerName, items, category, jamaCash, paidAmount, udhaarAmount, dueDate, dueDateLabel, rawTranscript, transcript, timestamp } = req.body;
 
     if (!customerName) {
       return res.status(400).json({ error: 'Customer name is required.' });
@@ -51,6 +52,7 @@ router.post('/transaction', async (req, res) => {
 
     const clientId = id ? String(id) : `tx_${Date.now()}`;
     const itemsStr = Array.isArray(items) ? items.join(', ') : (items || 'General Items');
+    const catStr = category || 'General Kirana / Khata';
     const cash = jamaCash !== undefined ? Number(jamaCash) : Number(paidAmount || 0);
     const udhaar = Number(udhaarAmount || 0);
     const ts = timestamp || Date.now();
@@ -62,6 +64,7 @@ router.post('/transaction', async (req, res) => {
       userId: req.user.userId,
       customerName,
       items: itemsStr,
+      category: catStr,
       jamaCash: cash,
       udhaarAmount: udhaar,
       dueDate: due,
@@ -75,6 +78,7 @@ router.post('/transaction', async (req, res) => {
         id: clientId,
         customerName,
         items: itemsStr,
+        category: catStr,
         jamaCash: cash,
         paidAmount: cash,
         udhaarAmount: udhaar,
@@ -100,6 +104,7 @@ router.post('/sync', async (req, res) => {
       for (const tx of transactions) {
         const clientId = tx.id ? String(tx.id) : `tx_${Date.now()}_${Math.random()}`;
         const itemsStr = Array.isArray(tx.items) ? tx.items.join(', ') : (tx.items || 'General Items');
+        const catStr = tx.category || 'General Kirana / Khata';
         const ts = tx.timestamp || Date.now();
         const cash = tx.jamaCash !== undefined ? Number(tx.jamaCash) : Number(tx.paidAmount || 0);
         const udhaar = Number(tx.udhaarAmount || 0);
@@ -111,6 +116,7 @@ router.post('/sync', async (req, res) => {
           userId: req.user.userId,
           customerName: tx.customerName || 'Walk-in Customer',
           items: itemsStr,
+          category: catStr,
           jamaCash: cash,
           udhaarAmount: udhaar,
           dueDate: due,
@@ -130,6 +136,7 @@ router.post('/sync', async (req, res) => {
         id: r.client_id || String(r.id),
         customerName: r.customer_name,
         items: r.items || 'General Items',
+        category: r.category || 'General Kirana / Khata',
         type: isSettlement ? 'settlement' : (Number(r.udhaar_amount || 0) > 0 ? 'credit_debit' : 'paid'),
         isSettlement: isSettlement,
         settledAmount: isSettlement ? Number(r.jama_cash || 0) : 0,
