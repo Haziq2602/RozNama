@@ -41,9 +41,10 @@ Rules:
 Transcript: "${transcript.trim()}"`;
 
     const candidateModels = [
-      'openai/gpt-oss-120b',
       'llama-3.1-8b-instant',
-      'llama3-8b-8192'
+      'llama3-8b-8192',
+      'openai/gpt-oss-120b',
+      'mixtral-8x7b-32768'
     ];
 
     let rawContent = null;
@@ -114,8 +115,8 @@ Transcript: "${transcript.trim()}"`;
         };
       }
 
-      // 2. Tomorrow / kal
-      if (combined.includes('tomorrow') || /\bkal\b/.test(combined)) {
+      // 2. Tomorrow / kal / cal
+      if (combined.includes('tomorrow') || /\b(?:kal|cal)\b/.test(combined)) {
         const target = addDays(1);
         return {
           dueDate: formatYMD(target),

@@ -107,8 +107,8 @@ async function processTranscript(rawText) {
 
   const token = localStorage.getItem('roznama_jwt_token');
 
-  // 1. ONLINE CLOUD AI PIPELINE: Groq LLM Extraction
-  if (USE_AI_EXTRACTION && navigator.onLine && token) {
+  // 1. ONLINE CLOUD AI PIPELINE: Groq LLM Extraction (Always default when online)
+  if (USE_AI_EXTRACTION && navigator.onLine) {
     let timeoutId = null;
     try {
       if (typeof showToast === 'function') {
@@ -119,13 +119,15 @@ async function processTranscript(rawText) {
       timeoutId = setTimeout(() => controller.abort(), 6000); // 6s fast failover
 
       const aiUrl = window.location.protocol === 'file:' ? 'http://localhost:5000/api/ai/extract' : '/api/ai/extract';
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
       const res = await fetch(aiUrl, {
         method: 'POST',
         signal: controller.signal,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+        headers,
         body: JSON.stringify({ transcript: rawText })
       });
 
@@ -134,44 +136,30 @@ async function processTranscript(rawText) {
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.extraction) {
-          const ext = data.extraction;
-          if (ext.udhaarAmount > 0) {
-            const dateInfo = calculateDueDate(rawText, ext.dueDate);
-            ext.dueDate = dateInfo.dueDate;
-            ext.dueDateLabel = dateInfo.dueDateLabel;
-          } else {
-            ext.dueDate = '';
-            ext.dueDateLabel = 'Settled';
-          }
-
-          // If category is not provided by backend, classify using offline ML
-          if (!ext.category || ext.category === 'General Items') {
-            const mlResult = (typeof classifyCategoryAndItemsOffline === 'function')
-              ? classifyCategoryAndItemsOffline(rawText)
-              : { category: 'General Kirana / Khata', items: 'General Kirana Items' };
-            ext.category = mlResult.category;
-            if (!ext.items || ext.items === 'General Items') {
-              ext.items = mlResult.items;
-            }
-          }
-
-          ext.extractionMode = 'online';
-          state.currentExtraction = ext;
-
-          if (typeof renderExtractionCard === 'function') {
-            renderExtractionCard();
-          }
-          if (typeof showToast === 'function') {
-            showToast('Entry extracted via Cloud AI', 'success');
-          }
+          applyExtractionResult(data.extraction, rawText, 'online');
           return;
         }
-      } else {
-        console.warn(`Cloud AI returned status ${res.status}. Falling back to Offline ML.`);
+      }
+
+      // If backend returned error (e.g. older server process), failover directly to Groq API
+      console.warn('Backend extract endpoint unavailable, attempting direct Groq AI call...');
+      const directResult = await callGroqDirectly(rawText);
+      if (directResult) {
+        applyDirectGroqResult(directResult, rawText);
+        return;
       }
     } catch (err) {
       if (timeoutId) clearTimeout(timeoutId);
-      console.warn('Backend Cloud AI unavailable or timed out, switching to Predefined Offline ML Engine:', err);
+      console.warn('Backend Cloud AI unavailable or timed out, trying direct Groq AI:', err);
+      try {
+        const directResult = await callGroqDirectly(rawText);
+        if (directResult) {
+          applyDirectGroqResult(directResult, rawText);
+          return;
+        }
+      } catch (directErr) {
+        console.warn('Direct Groq AI also unavailable, falling back to Offline ML:', directErr);
+      }
     }
   }
 
@@ -179,14 +167,116 @@ async function processTranscript(rawText) {
   offlineMLExtraction(rawText);
 }
 
+// Optional Direct Groq API Client Fallback (Only used if user configured a client key in localStorage)
+async function callGroqDirectly(rawText) {
+  const apiKey = localStorage.getItem('roznama_groq_api_key');
+  if (!apiKey) return null;
+  const prompt = `You are a Kirana store voice ledger assistant for local shops in India.
+Your task is to accurately extract financial ledger details from Hindi, Hinglish, or English voice notes.
+
+Extract the following JSON fields:
+- "customerName": Name of the customer (string). Default to "Walk-in Customer" if unmentioned.
+- "jamaCash": Exact cash received RIGHT NOW (number). If full credit/no cash paid, return 0.
+- "udhaarAmount": Pending debt/credit balance to be collected LATER (number). If full payment/no udhaar, return 0.
+- "items": Comma-separated list of purchased items (string). E.g. "Biscuit". Default to "General Kirana Items" if unspecified.
+- "category": Retail store category (string, choose best match from: "Groceries & Ration", "Dairy & Milk Products", "Cooking Oils & Ghee", "Spices & Masala", "Snacks & Beverages", "Toiletries & Cleaning", "Personal Care & Cosmetics", "General Kirana / Khata").
+- "dueDate": Due date or relative day if promised (string, e.g. "tomorrow", "day after tomorrow", "next Monday", "2026-09-20", or "").
+
+Rules:
+1. Be extremely careful with Jama vs. Udhaar:
+   - "50 rupaye ki biscuit kharida 20 diya aur 30 cal dega" -> customerName: "Rahul", jamaCash: 20, udhaarAmount: 30, items: "Biscuit", category: "Snacks & Beverages", dueDate: "tomorrow"
+2. Return ONLY a valid JSON object matching this schema.
+
+Transcript: "${rawText.trim()}"`;
+
+  const models = ['llama-3.1-8b-instant', 'llama3-8b-8192'];
+  for (const m of models) {
+    try {
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: m,
+          messages: [
+            { role: 'system', content: 'You are an expert Indian Kirana store financial extractor. Return pure JSON only.' },
+            { role: 'user', content: prompt }
+          ],
+          response_format: { type: 'json_object' },
+          temperature: 0.1
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const content = data.choices?.[0]?.message?.content;
+        if (content) return JSON.parse(content);
+      }
+    } catch (e) {
+      console.warn(`Direct Groq call failed on ${m}:`, e);
+    }
+  }
+  return null;
+}
+
+function applyDirectGroqResult(parsed, rawText) {
+  const paidAmount = Number(parsed.jamaCash || 0);
+  const udhaarAmount = Number(parsed.udhaarAmount || 0);
+  const dateInfo = udhaarAmount > 0 ? calculateDueDate(rawText, parsed.dueDate) : { dueDate: '', dueDateLabel: 'Settled' };
+
+  const ext = {
+    customerName: parsed.customerName || 'Walk-in Customer',
+    paidAmount,
+    udhaarAmount,
+    items: parsed.items || 'General Kirana Items',
+    category: parsed.category || 'General Kirana / Khata',
+    dueDate: dateInfo.dueDate,
+    dueDateLabel: dateInfo.dueDateLabel,
+    transcript: rawText.trim(),
+    extractionMode: 'online'
+  };
+
+  applyExtractionResult(ext, rawText, 'online');
+}
+
+function applyExtractionResult(ext, rawText, mode = 'online') {
+  if (ext.udhaarAmount > 0 && !ext.dueDate) {
+    const dateInfo = calculateDueDate(rawText, ext.dueDate);
+    ext.dueDate = dateInfo.dueDate;
+    ext.dueDateLabel = dateInfo.dueDateLabel;
+  }
+
+  if (!ext.category || ext.category === 'General Items') {
+    const mlResult = (typeof classifyCategoryAndItemsOffline === 'function')
+      ? classifyCategoryAndItemsOffline(rawText)
+      : { category: 'General Kirana / Khata', items: 'General Kirana Items' };
+    ext.category = mlResult.category;
+    if (!ext.items || ext.items === 'General Items') {
+      ext.items = mlResult.items;
+    }
+  }
+
+  ext.extractionMode = mode;
+  state.currentExtraction = ext;
+
+  if (typeof renderExtractionCard === 'function') {
+    renderExtractionCard();
+  }
+  if (typeof showToast === 'function') {
+    showToast('Entry extracted via Groq Cloud AI', 'success');
+  }
+}
+
 // ============================================================================
 // Offline Vernacular NLP Extraction Engine
-// (Category & Item classification delegated to js/backend/classifier.js)
 // ============================================================================
 
 // Offline Context-Aware Amount Extractor (Jama Cash vs Udhaar Balance)
 function extractAmountsOffline(rawText) {
   let text = (rawText || '').toLowerCase();
+  let paidAmount = 0;
+  let udhaarAmount = 0;
 
   // Convert common spoken Hindi number words to digits
   const hindiWordMap = [
@@ -215,8 +305,8 @@ function extractAmountsOffline(rawText) {
 
   const clauses = text.split(/\b(?:but|and|aur|par|then|lekin|,|\.)\b/);
 
-  let paidAmount = 0;
-  let udhaarAmount = 0;
+  paidAmount = 0;
+  udhaarAmount = 0;
 
   const paidKeywords = ['paid', 'gave', 'cash', 'diye', 'diya', 'mila', 'received', 'jama', 'pay', 'advance', 'bhugtan'];
   const udhaarKeywords = ['udhaar', 'udhar', 'credit', 'give', 'clear', 'remaining', 'baki', 'baaki', 'due', 'kal', 'cal', 'tomorrow', 'parso', 'day after tomorrow', 'will pay', 'will give', 'likh lo', 'khate me', 'dega', 'denge'];
