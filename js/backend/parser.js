@@ -109,14 +109,19 @@ async function processTranscript(rawText) {
 
   // 1. ONLINE CLOUD AI PIPELINE: Groq LLM Extraction
   if (USE_AI_EXTRACTION && navigator.onLine && token) {
+    let timeoutId = null;
     try {
       if (typeof showToast === 'function') {
         showToast('Processing with Cloud AI...', 'info');
       }
 
+      const controller = new AbortController();
+      timeoutId = setTimeout(() => controller.abort(), 6000); // 6s fast failover
+
       const aiUrl = window.location.protocol === 'file:' ? 'http://localhost:5000/api/ai/extract' : '/api/ai/extract';
       const res = await fetch(aiUrl, {
         method: 'POST',
+        signal: controller.signal,
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
@@ -124,41 +129,49 @@ async function processTranscript(rawText) {
         body: JSON.stringify({ transcript: rawText })
       });
 
-      const data = await res.json();
+      if (timeoutId) clearTimeout(timeoutId);
 
-      if (res.ok && data.success && data.extraction) {
-        const ext = data.extraction;
-        if (ext.udhaarAmount > 0) {
-          const dateInfo = calculateDueDate(rawText, ext.dueDate);
-          ext.dueDate = dateInfo.dueDate;
-          ext.dueDateLabel = dateInfo.dueDateLabel;
-        } else {
-          ext.dueDate = '';
-          ext.dueDateLabel = 'Settled';
-        }
-
-        // If category is not provided by backend, classify using offline ML
-        if (!ext.category || ext.category === 'General Items') {
-          const mlResult = classifyCategoryAndItemsOffline(rawText);
-          ext.category = mlResult.category;
-          if (!ext.items || ext.items === 'General Items') {
-            ext.items = mlResult.items;
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.extraction) {
+          const ext = data.extraction;
+          if (ext.udhaarAmount > 0) {
+            const dateInfo = calculateDueDate(rawText, ext.dueDate);
+            ext.dueDate = dateInfo.dueDate;
+            ext.dueDateLabel = dateInfo.dueDateLabel;
+          } else {
+            ext.dueDate = '';
+            ext.dueDateLabel = 'Settled';
           }
-        }
 
-        ext.extractionMode = 'online';
-        state.currentExtraction = ext;
+          // If category is not provided by backend, classify using offline ML
+          if (!ext.category || ext.category === 'General Items') {
+            const mlResult = (typeof classifyCategoryAndItemsOffline === 'function')
+              ? classifyCategoryAndItemsOffline(rawText)
+              : { category: 'General Kirana / Khata', items: 'General Kirana Items' };
+            ext.category = mlResult.category;
+            if (!ext.items || ext.items === 'General Items') {
+              ext.items = mlResult.items;
+            }
+          }
 
-        if (typeof renderExtractionCard === 'function') {
-          renderExtractionCard();
+          ext.extractionMode = 'online';
+          state.currentExtraction = ext;
+
+          if (typeof renderExtractionCard === 'function') {
+            renderExtractionCard();
+          }
+          if (typeof showToast === 'function') {
+            showToast('Entry extracted via Cloud AI', 'success');
+          }
+          return;
         }
-        if (typeof showToast === 'function') {
-          showToast('Entry extracted via Cloud AI', 'success');
-        }
-        return;
+      } else {
+        console.warn(`Cloud AI returned status ${res.status}. Falling back to Offline ML.`);
       }
     } catch (err) {
-      console.warn('Backend Cloud AI unavailable, switching to Predefined Offline ML Engine:', err);
+      if (timeoutId) clearTimeout(timeoutId);
+      console.warn('Backend Cloud AI unavailable or timed out, switching to Predefined Offline ML Engine:', err);
     }
   }
 
@@ -283,44 +296,70 @@ function extractCustomerNameOffline(rawText) {
 
 // Offline Machine Learning Full Extraction Handler
 function offlineMLExtraction(rawText) {
-  // 1. Context-Aware Amount Extraction
-  const { paidAmount, udhaarAmount } = extractAmountsOffline(rawText);
+  try {
+    // 1. Context-Aware Amount Extraction
+    const { paidAmount, udhaarAmount } = (typeof extractAmountsOffline === 'function')
+      ? extractAmountsOffline(rawText)
+      : { paidAmount: 0, udhaarAmount: 0 };
 
-  // 2. Customer Name Extraction
-  const customerName = extractCustomerNameOffline(rawText);
+    // 2. Customer Name Extraction
+    const customerName = (typeof extractCustomerNameOffline === 'function')
+      ? extractCustomerNameOffline(rawText)
+      : 'Walk-in Customer';
 
-  // 3. Predefined ML Category & Items Classification
-  const { category, items } = classifyCategoryAndItemsOffline(rawText);
+    // 3. Predefined ML Category & Items Classification
+    const mlClassification = (typeof classifyCategoryAndItemsOffline === 'function')
+      ? classifyCategoryAndItemsOffline(rawText)
+      : { category: 'General Kirana / Khata', items: 'General Kirana Items' };
+    const category = mlClassification.category || 'General Kirana / Khata';
+    const items = mlClassification.items || 'General Kirana Items';
 
-  // 4. Exact Relative Due Date Calculation
-  let formattedDueDate = null;
-  let dueDateLabel = "Settled";
+    // 4. Exact Relative Due Date Calculation
+    let formattedDueDate = null;
+    let dueDateLabel = "Settled";
 
-  if (udhaarAmount > 0) {
-    const dateInfo = calculateDueDate(rawText);
-    formattedDueDate = dateInfo.dueDate;
-    dueDateLabel = dateInfo.dueDateLabel;
-  }
+    if (udhaarAmount > 0) {
+      const dateInfo = calculateDueDate(rawText);
+      formattedDueDate = dateInfo.dueDate;
+      dueDateLabel = dateInfo.dueDateLabel;
+    }
 
-  // 5. Store in State with Extraction Mode
-  state.currentExtraction = {
-    customerName,
-    paidAmount,
-    udhaarAmount,
-    items,
-    category,
-    dueDate: formattedDueDate,
-    dueDateLabel,
-    transcript: rawText,
-    extractionMode: 'offline_ml'
-  };
+    // 5. Store in State with Extraction Mode
+    state.currentExtraction = {
+      customerName,
+      paidAmount,
+      udhaarAmount,
+      items,
+      category,
+      dueDate: formattedDueDate,
+      dueDateLabel,
+      transcript: rawText,
+      extractionMode: 'offline_ml'
+    };
 
-  // 6. Trigger UI Extraction Review Card
-  if (typeof renderExtractionCard === 'function') {
-    renderExtractionCard();
-  }
+    // 6. Trigger UI Extraction Review Card
+    if (typeof renderExtractionCard === 'function') {
+      renderExtractionCard();
+    }
 
-  if (typeof showToast === 'function') {
-    showToast('⚡ Extracted locally via Predefined ML Engine', 'info');
+    if (typeof showToast === 'function') {
+      showToast('⚡ Extracted locally via Predefined ML Engine', 'info');
+    }
+  } catch (err) {
+    console.error('Offline ML extraction error:', err);
+    state.currentExtraction = {
+      customerName: 'Walk-in Customer',
+      paidAmount: 0,
+      udhaarAmount: 0,
+      items: 'General Kirana Items',
+      category: 'General Kirana / Khata',
+      dueDate: '',
+      dueDateLabel: 'Settled',
+      transcript: rawText,
+      extractionMode: 'offline_ml'
+    };
+    if (typeof renderExtractionCard === 'function') {
+      renderExtractionCard();
+    }
   }
 }

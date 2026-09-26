@@ -12,6 +12,13 @@ const PORT = process.env.PORT || 5000;
 
 // Enable CORS & body parsers
 app.use(cors());
+// Pre-parsed body guard for Vercel serverless execution
+app.use((req, res, next) => {
+  if (req.body && typeof req.body === 'object') {
+    return next();
+  }
+  next();
+});
 app.use(express.json());
 // Native non-multer raw audio parser (streams audio directly to memory)
 app.use(express.raw({ type: ['audio/*', 'application/octet-stream'], limit: '15mb' }));

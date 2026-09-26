@@ -47,7 +47,7 @@ Transcript: "${transcript.trim()}"`;
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'openai/gpt-oss-120b',
+        model: 'llama-3.3-70b-versatile',
         messages: [
           { role: 'system', content: 'You are an expert Indian Kirana store financial extractor. Return pure JSON only.' },
           { role: 'user', content: prompt }
