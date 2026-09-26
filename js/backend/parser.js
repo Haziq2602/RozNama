@@ -7,7 +7,7 @@ const USE_AI_EXTRACTION = true;
 function calculateDueDate(text, spokenHint) {
   const combined = `${text || ''} ${spokenHint || ''}`.toLowerCase();
   const today = new Date();
-  
+
   const formatYMD = (d) => {
     const year = d.getFullYear();
     const month = String(d.getMonth() + 1).padStart(2, '0');
@@ -30,8 +30,8 @@ function calculateDueDate(text, spokenHint) {
     };
   }
 
-  // 2. Tomorrow / kal
-  if (combined.includes('tomorrow') || /\bkal\b/.test(combined)) {
+  // 2. Tomorrow / kal / cal
+  if (combined.includes('tomorrow') || /\b(?:kal|cal)\b/.test(combined)) {
     const target = addDays(1);
     return {
       dueDate: formatYMD(target),
@@ -203,13 +203,23 @@ function extractAmountsOffline(rawText) {
     text = text.replace(h.regex, h.val);
   }
 
+  // Direct High-Precision Vernacular Patterns
+  const paidMatch = text.match(/(\d+)\s*(?:rupaye|rs|r)?\s*(?:cash)?\s*(?:diya|diye|paid|jama|mila)/);
+  const udhaarMatch = text.match(/(\d+)\s*(?:rupaye|rs|r)?\s*(?:(?:cal|kal|parso)?\s*(?:me|ko)?\s*)?(?:dega|denge|baki|baaki|udhaar|udhar|due)/);
+
+  if (paidMatch && udhaarMatch) {
+    paidAmount = parseInt(paidMatch[1], 10);
+    udhaarAmount = parseInt(udhaarMatch[1], 10);
+    return { paidAmount, udhaarAmount };
+  }
+
   const clauses = text.split(/\b(?:but|and|aur|par|then|lekin|,|\.)\b/);
 
   let paidAmount = 0;
   let udhaarAmount = 0;
 
   const paidKeywords = ['paid', 'gave', 'cash', 'diye', 'diya', 'mila', 'received', 'jama', 'pay', 'advance', 'bhugtan'];
-  const udhaarKeywords = ['udhaar', 'udhar', 'credit', 'give', 'clear', 'remaining', 'baki', 'baaki', 'due', 'kal', 'tomorrow', 'parso', 'day after tomorrow', 'will pay', 'will give', 'likh lo', 'khate me', 'dega', 'denge'];
+  const udhaarKeywords = ['udhaar', 'udhar', 'credit', 'give', 'clear', 'remaining', 'baki', 'baaki', 'due', 'kal', 'cal', 'tomorrow', 'parso', 'day after tomorrow', 'will pay', 'will give', 'likh lo', 'khate me', 'dega', 'denge'];
 
   clauses.forEach(clause => {
     const numbers = clause.match(/\b\d+\b/g);

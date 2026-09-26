@@ -21,7 +21,7 @@ function renderExtractionCard() {
   const ext = state.currentExtraction;
   const isOfflineML = ext.extractionMode === 'offline_ml';
   const categoryOptions = (typeof PREDEFINED_ML_CATEGORIES !== 'undefined')
-    ? PREDEFINED_ML_CATEGORIES
+    ? (Array.isArray(PREDEFINED_ML_CATEGORIES) ? PREDEFINED_ML_CATEGORIES : Object.keys(PREDEFINED_ML_CATEGORIES))
     : [
       'Groceries & Ration',
       'Dairy & Milk Products',

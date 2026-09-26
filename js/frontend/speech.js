@@ -36,8 +36,7 @@ async function toggleRecording() {
     if (micBtn) micBtn.classList.add('recording');
 
     // 2. ONLINE MODE: Decide between Online Groq Whisper vs Browser Speech
-    const token = localStorage.getItem('roznama_jwt_token');
-    const isOnlineWithWhisper = token && navigator.mediaDevices && window.MediaRecorder;
+    const isOnlineWithWhisper = navigator.mediaDevices && window.MediaRecorder;
 
     if (isOnlineWithWhisper) {
       startWhisperAudioRecording(statusEl);
@@ -128,17 +127,13 @@ async function sendAudioToWhisper(audioBlob) {
         processTranscript(data.text);
       }
     } else {
-      console.warn('Voice transcription unavailable, fallback to manual input or check error:', data);
-      if (data.error && typeof showToast === 'function') {
-        showToast('Voice recognition unavailable, please type or try again', 'info');
-      }
+      console.warn('Whisper transcription unavailable, fallback to browser speech recognition:', data);
+      startBrowserSpeechRecording(statusEl);
     }
 
   } catch (err) {
-    console.error('Audio upload to Whisper failed:', err);
-    if (typeof showToast === 'function') {
-      showToast('Connection interrupted. Please tap mic again to use Offline Speech or type manually.', 'info');
-    }
+    console.error('Audio upload to Whisper failed, falling back to browser speech:', err);
+    startBrowserSpeechRecording(statusEl);
   } finally {
     if (statusEl) {
       statusEl.classList.remove('listening');

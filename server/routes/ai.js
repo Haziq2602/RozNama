@@ -3,8 +3,8 @@ const { authenticateToken } = require('../middleware/auth');
 
 const router = express.Router();
 
-// Protected AI extraction endpoint
-router.post('/extract', authenticateToken, async (req, res) => {
+// AI extraction endpoint (Accessible by web app and guest users)
+router.post('/extract', async (req, res) => {
   try {
     const { transcript } = req.body;
     if (!transcript || typeof transcript !== 'string' || !transcript.trim()) {
@@ -40,31 +40,51 @@ Rules:
 
 Transcript: "${transcript.trim()}"`;
 
-    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        messages: [
-          { role: 'system', content: 'You are an expert Indian Kirana store financial extractor. Return pure JSON only.' },
-          { role: 'user', content: prompt }
-        ],
-        response_format: { type: 'json_object' },
-        temperature: 0.1
-      })
-    });
+    const candidateModels = [
+      'openai/gpt-oss-120b',
+      'llama-3.1-8b-instant',
+      'llama3-8b-8192'
+    ];
 
-    if (!groqRes.ok) {
-      const errText = await groqRes.text();
-      console.error('Groq API error response:', groqRes.status, errText);
-      return res.status(502).json({ error: 'Groq API request failed', details: errText, fallback: true });
+    let rawContent = null;
+    let lastError = null;
+
+    for (const modelName of candidateModels) {
+      try {
+        const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+          },
+          body: JSON.stringify({
+            model: modelName,
+            messages: [
+              { role: 'system', content: 'You are an expert Indian Kirana store financial extractor. Return pure JSON only.' },
+              { role: 'user', content: prompt }
+            ],
+            response_format: { type: 'json_object' },
+            temperature: 0.1
+          })
+        });
+
+        if (groqRes.ok) {
+          const groqData = await groqRes.json();
+          rawContent = groqData.choices?.[0]?.message?.content;
+          if (rawContent) break;
+        } else {
+          lastError = await groqRes.text();
+        }
+      } catch (err) {
+        lastError = err.message;
+      }
     }
 
-    const groqData = await groqRes.json();
-    const rawContent = groqData.choices?.[0]?.message?.content;
+    if (!rawContent) {
+      console.error('Groq API request failed. Last error:', lastError);
+      return res.status(502).json({ error: 'Groq API request failed', details: lastError, fallback: true });
+    }
+
     const parsed = JSON.parse(rawContent);
 
     // Helper to calculate exact date from transcript or LLM hint
@@ -191,7 +211,7 @@ Transcript: "${transcript.trim()}"`;
 });
 
 // Native Non-Multer Audio Transcription with Groq Whisper Large v3
-router.post('/transcribe', authenticateToken, async (req, res) => {
+router.post('/transcribe', async (req, res) => {
   try {
     const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey || apiKey === 'your_groq_api_key_here') {
